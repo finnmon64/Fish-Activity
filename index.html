@@ -51,7 +51,6 @@
     .tab-content { display: none; flex-direction: column; flex-grow: 1; }
     .tab-content.active { display: flex; }
 
-    /* Header & Date Strip */
     header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 6px; }
     header h1 {
       font-size: 1.25rem;
@@ -86,7 +85,6 @@
     .date-item .day-num { font-size: 1.15rem; margin-bottom: 2px; }
     .date-item .day-name { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.3px; }
 
-    /* Cards & Panels */
     .module-panel {
       background: var(--bg-card);
       border: 1px solid var(--border-card);
@@ -261,13 +259,54 @@
     .tl-desc { font-size: 0.75rem; color: #fff; padding-left: 10px; border-left: 1px solid rgba(255, 255, 255, 0.15); line-height: 1.35; }
     .tl-desc strong { color: #fff; font-size: 0.82rem; }
 
-    /* Vessel & Spot Creator */
     #map-creator { width: 100%; height: 195px; border-radius: 8px; margin: 8px 0; background: #071526; z-index: 1; border: 1px solid var(--border-card); }
     .saved-spot-row { display: flex; justify-content: space-between; align-items: center; background: rgba(0, 0, 0, 0.2); padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.06); }
     .btn-action { background: var(--neon-green); color: #042414; border: none; padding: 7px 14px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 0.8rem; }
     .del-btn { background: #e53935; color: #fff; border: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; }
 
-    /* Gear Section */
+    /* Multi-Species Select Pills */
+    .species-pills-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .species-pill {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-card);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .species-pill.selected {
+      background: rgba(0, 229, 255, 0.15);
+      border-color: var(--neon-cyan);
+      color: #fff;
+      box-shadow: var(--glow-cyan);
+    }
+    .species-pill .pill-chk {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid var(--border-card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+    }
+    .species-pill.selected .pill-chk {
+      background: var(--neon-cyan);
+      color: #071526;
+      border-color: var(--neon-cyan);
+    }
+
     .checklist-group { margin-bottom: 14px; }
     .checklist-group h4 { font-size: 0.76rem; color: #90caf9; text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid rgba(144, 202, 249, 0.15); padding-bottom: 4px; font-weight: 700; }
     .check-item { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px; background: rgba(0, 0, 0, 0.2); padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); }
@@ -489,25 +528,35 @@
       </div>
     </div>
 
-    <!-- TAB 4: GEAR CHECKLIST (CUSTOMIZABLE BY CATEGORY) -->
+    <!-- TAB 4: GEAR CHECKLIST (MULTI-SPECIES TARGETING) -->
     <div id="tab-gear" class="tab-content">
       <div class="module-panel">
         <div class="module-header">
-          <span>🎣 Pre-Mission Gear Checklist</span>
-          <button onclick="resetChecks()" style="background:none; border:1px solid rgba(255,255,255,0.25); color:#fff; border-radius:4px; padding:2px 7px; font-size:0.68rem; cursor:pointer;">Uncheck All</button>
+          <span>🎣 Target Species (Select Multiple)</span>
+          <button onclick="resetChecks()" style="background:none; border:1px solid rgba(255,255,255,0.25); color:#fff; border-radius:4px; padding:2px 7px; font-size:0.68rem; cursor:pointer;">Uncheck Gear</button>
         </div>
 
-        <div class="input-group" style="margin-bottom: 12px;">
-          <label>Target Species Loadout</label>
-          <select id="species-select" onchange="renderChecklist()">
-            <option value="kingfish">Kingfish (Heavy Jig & Livebait)</option>
-            <option value="snapper">Snapper & Tarakihi (Strayline / Ledger)</option>
-            <option value="groper">Hāpuku & Bluenose (Deep Trench)</option>
-            <option value="pelagic">Kahawai & Albacore (Trolling)</option>
-          </select>
+        <!-- Multi-Species Pills -->
+        <div class="species-pills-grid" id="species-pills-container">
+          <div class="species-pill selected" data-species="kingfish" onclick="toggleSpeciesPill('kingfish')">
+            <div class="pill-chk">✓</div>
+            <span>Kingfish</span>
+          </div>
+          <div class="species-pill selected" data-species="snapper" onclick="toggleSpeciesPill('snapper')">
+            <div class="pill-chk">✓</div>
+            <span>Snapper & Tarakihi</span>
+          </div>
+          <div class="species-pill" data-species="groper" onclick="toggleSpeciesPill('groper')">
+            <div class="pill-chk"></div>
+            <span>Hāpuku / Trench</span>
+          </div>
+          <div class="species-pill" data-species="pelagic" onclick="toggleSpeciesPill('pelagic')">
+            <div class="pill-chk"></div>
+            <span>Kahawai / Tuna</span>
+          </div>
         </div>
 
-        <!-- Add item with category target -->
+        <!-- Add Custom Item -->
         <div class="input-group" style="margin-bottom: 12px; background: rgba(0,0,0,0.25); padding: 8px; border-radius: 8px; border: 1px solid var(--border-card);">
           <label style="color:#90caf9;">Add Custom Item to Category:</label>
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:6px;">
@@ -600,6 +649,9 @@
 
     let map, polyline, markers = [];
     let creatorMap, creatorMarker, pickedLatLng = null;
+
+    // Multi-Species Selected State
+    let selectedSpecies = JSON.parse(localStorage.getItem('selected_species_v1') || '["kingfish", "snapper"]');
 
     // =========================================================================
     // 2. OFFLINE ASTRONOMY & TIDAL ENGINE
@@ -811,47 +863,56 @@
     function initMaps() {
       const tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
-      map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-41.29, 174.83], 11);
-      L.tileLayer(tileUrl, { maxZoom: 15 }).addTo(map);
+      const mapEl = document.getElementById('map');
+      if (mapEl && !map) {
+        map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-41.29, 174.83], 11);
+        L.tileLayer(tileUrl, { maxZoom: 15 }).addTo(map);
 
-      map.on('click', (e) => {
-        tempWaypoints.push(e.latlng);
-        runRoutingAndTimeline();
-      });
+        map.on('click', (e) => {
+          tempWaypoints.push(e.latlng);
+          runRoutingAndTimeline();
+        });
+      }
 
-      creatorMap = L.map('map-creator', { zoomControl: false, attributionControl: false }).setView([-41.22, 174.80], 10);
-      L.tileLayer(tileUrl, { maxZoom: 15 }).addTo(creatorMap);
+      const creatorEl = document.getElementById('map-creator');
+      if (creatorEl && !creatorMap) {
+        creatorMap = L.map('map-creator', { zoomControl: false, attributionControl: false }).setView([-41.22, 174.80], 10);
+        L.tileLayer(tileUrl, { maxZoom: 15 }).addTo(creatorMap);
 
-      creatorMap.on('click', (e) => {
-        pickedLatLng = e.latlng;
-        document.getElementById('new-spot-coords').value = `${pickedLatLng.lat.toFixed(4)}, ${pickedLatLng.lng.toFixed(4)}`;
-        if (creatorMarker) creatorMap.removeLayer(creatorMarker);
-        creatorMarker = L.marker(pickedLatLng).addTo(creatorMap);
-      });
+        creatorMap.on('click', (e) => {
+          pickedLatLng = e.latlng;
+          document.getElementById('new-spot-coords').value = `${pickedLatLng.lat.toFixed(4)}, ${pickedLatLng.lng.toFixed(4)}`;
+          if (creatorMarker) creatorMap.removeLayer(creatorMarker);
+          creatorMarker = L.marker(pickedLatLng).addTo(creatorMap);
+        });
+      }
 
       refreshSpotsUI();
     }
 
     function refreshSpotsUI() {
-      // Reload custom spots from storage
       customSpots = JSON.parse(localStorage.getItem('custom_spots_v4') || '[]');
       allSpots = [...defaultSpots, ...customSpots];
 
-      // Update Trip Planner Checkbox List
-      document.getElementById('spots-checkboxes').innerHTML = allSpots.map((s, i) => `
-        <label>
-          <input type="checkbox" class="spot-chk" value="${i}" ${i === 0 ? 'checked' : ''} onchange="runRoutingAndTimeline()">
-          <span>${s.name} ${s.isCustom ? '<span class="spot-custom-badge">Custom</span>' : ''}</span>
-        </label>
-      `).join('');
+      const spotContainer = document.getElementById('spots-checkboxes');
+      if (spotContainer) {
+        spotContainer.innerHTML = allSpots.map((s, i) => `
+          <label>
+            <input type="checkbox" class="spot-chk" value="${i}" ${i === 0 ? 'checked' : ''} onchange="runRoutingAndTimeline()">
+            <span>${s.name} ${s.isCustom ? '<span class="spot-custom-badge">Custom</span>' : ''}</span>
+          </label>
+        `).join('');
+      }
 
-      // Update Vessel & Spots Tab List
-      document.getElementById('custom-spots-list').innerHTML = customSpots.map((s, i) => `
-        <div class="saved-spot-row">
-          <span><strong>${s.name}</strong> (${s.lat.toFixed(3)}, ${s.lon.toFixed(3)})</span>
-          <button class="del-btn" onclick="deleteCustomSpot(${i})">Delete</button>
-        </div>
-      `).join('') || '<span style="font-size:0.75rem; color:var(--text-muted);">Tap map above to create custom spots.</span>';
+      const customList = document.getElementById('custom-spots-list');
+      if (customList) {
+        customList.innerHTML = customSpots.map((s, i) => `
+          <div class="saved-spot-row">
+            <span><strong>${s.name}</strong> (${s.lat.toFixed(3)}, ${s.lon.toFixed(3)})</span>
+            <button class="del-btn" onclick="deleteCustomSpot(${i})">Delete</button>
+          </div>
+        `).join('') || '<span style="font-size:0.75rem; color:var(--text-muted);">Tap map above to create custom spots.</span>';
+      }
 
       runRoutingAndTimeline();
     }
@@ -956,7 +1017,6 @@
 
       map.fitBounds(polyline.getBounds(), { padding: [22, 22] });
 
-      // Timeline reverse calculation
       const majs = currentData.majors.filter(t => t >= currentData.dayStart && t < currentData.dayEnd);
       const mins = currentData.minors.filter(t => t >= currentData.dayStart && t < currentData.dayEnd);
       const pSel = document.getElementById('target-phase').value;
@@ -982,7 +1042,7 @@
     };
 
     // =========================================================================
-    // 5. PROFILE & CATEGORIZED CUSTOM GEAR
+    // 5. PROFILE & MULTI-SPECIES CATEGORIZED GEAR
     // =========================================================================
     function saveProfile() {
       const profile = {
@@ -1008,15 +1068,26 @@
       document.getElementById('boat-title-header').textContent = `${document.getElementById('boat-name').value} • Mission Control`;
     }
 
-    // Custom items stored as objects: { text: string, category: 'safety' | 'tackle' | 'extras' }
     let customGearItems = JSON.parse(localStorage.getItem('custom_gear_categorized_v4') || '[]');
     let checkedState = JSON.parse(localStorage.getItem('checked_gear_v4') || '{}');
 
     const SPECIES_GEAR = {
-      kingfish: ['Heavy Jigging Rods (PE5–8)', '200g–300g Knife Jigs & Assist Hooks', 'Livebait Sabikis & Aerator Check', '80lb–100lb Fluorocarbon Trace', 'Gimbal Belt, Gaff & Heavy Pliers'],
-      snapper: ['Strayline Sets & Baitrunner Reels', '1/4oz–1oz Ball Sinkers & Recurve Hooks', 'Burley Bomb, Cage & Dispenser', 'Pilchards, Squid & Bonito Bait', 'Iki Spike & Salt Ice Bin'],
-      groper: ['Deep Drop Electric/Manual Combos', '16/0 Circle Hooks & Luminescent Rigs', '24oz–32oz Puka Leads', 'Heavy Anchor & Alderney Float Ring', 'Whole Kahawai / Barracouta Baits'],
-      pelagic: ['Trolling Lures (Bibbed & Skirted)', 'Spinning Rod with 40g–60g Metal Jigs', 'Landing Net & Measuring Mat', 'Salt Ice Slurry Ready']
+      kingfish: {
+        title: 'Kingfish Tackle',
+        items: ['Heavy Jigging Rods (PE5–8)', '200g–300g Knife Jigs & Assist Hooks', 'Livebait Sabikis & Aerator Check', '80lb–100lb Fluorocarbon Trace', 'Gimbal Belt, Gaff & Heavy Pliers']
+      },
+      snapper: {
+        title: 'Snapper & Tarakihi Tackle',
+        items: ['Strayline Sets & Baitrunner Reels', '1/4oz–1oz Ball Sinkers & Recurve Hooks', 'Burley Bomb, Cage & Dispenser', 'Pilchards, Squid & Bonito Bait', 'Iki Spike & Salt Ice Bin']
+      },
+      groper: {
+        title: 'Hāpuku & Bluenose Trench Tackle',
+        items: ['Deep Drop Electric/Manual Combos', '16/0 Circle Hooks & Luminescent Rigs', '24oz–32oz Puka Leads', 'Heavy Anchor & Alderney Float Ring', 'Whole Kahawai / Barracouta Baits']
+      },
+      pelagic: {
+        title: 'Pelagic & Tuna Tackle',
+        items: ['Trolling Lures (Bibbed & Skirted)', 'Spinning Rod with 40g–60g Metal Jigs', 'Landing Net & Measuring Mat', 'Salt Ice Slurry Ready']
+      }
     };
 
     const BASE_ESSENTIALS = [
@@ -1027,6 +1098,27 @@
       'Flares, First Aid Kit & Bailer',
       'Navigation Lights & Bilge Pump Test'
     ];
+
+    window.toggleSpeciesPill = function(speciesKey) {
+      const idx = selectedSpecies.indexOf(speciesKey);
+      if (idx > -1) {
+        if (selectedSpecies.length > 1) selectedSpecies.splice(idx, 1);
+      } else {
+        selectedSpecies.push(speciesKey);
+      }
+      localStorage.setItem('selected_species_v1', JSON.stringify(selectedSpecies));
+      renderSpeciesPills();
+      renderChecklist();
+    };
+
+    function renderSpeciesPills() {
+      document.querySelectorAll('.species-pill').forEach(pill => {
+        const sp = pill.getAttribute('data-species');
+        const isSel = selectedSpecies.includes(sp);
+        pill.classList.toggle('selected', isSel);
+        pill.querySelector('.pill-chk').textContent = isSel ? '✓' : '';
+      });
+    }
 
     window.toggleCheckItem = function(key, checked) {
       checkedState[key] = checked;
@@ -1057,9 +1149,6 @@
     };
 
     window.renderChecklist = function() {
-      const sp = document.getElementById('species-select').value;
-      const spItems = SPECIES_GEAR[sp] || [];
-
       const renderItem = (label, idxKey, delIdx = null) => {
         const isChk = checkedState[idxKey] ? 'checked' : '';
         const delBtn = delIdx !== null ? `<button class="del-btn" onclick="removeCustomGear(${delIdx})">✕</button>` : '';
@@ -1071,7 +1160,6 @@
         `;
       };
 
-      // 1. Vessel & Safety Group (Base + Custom Safety)
       let html = `<div class="checklist-group"><h4>🛥️ Vessel & Safety Essentials</h4>`;
       BASE_ESSENTIALS.forEach((item, i) => { html += renderItem(item, 'base_' + i); });
       customGearItems.forEach((item, i) => {
@@ -1079,15 +1167,22 @@
       });
       html += `</div>`;
 
-      // 2. Target Species Tackle Group (Species Default + Custom Tackle)
-      html += `<div class="checklist-group"><h4>🎣 Target Species Tackle</h4>`;
-      spItems.forEach((item, i) => { html += renderItem(item, sp + '_' + i); });
-      customGearItems.forEach((item, i) => {
-        if (item.category === 'tackle') html += renderItem(item.text, 'cust_' + i, i);
+      selectedSpecies.forEach(spKey => {
+        const spData = SPECIES_GEAR[spKey];
+        if (spData) {
+          html += `<div class="checklist-group"><h4>🎣 ${spData.title}</h4>`;
+          spData.items.forEach((item, i) => { html += renderItem(item, spKey + '_' + i); });
+          html += `</div>`;
+        }
       });
-      html += `</div>`;
 
-      // 3. General Extras Group
+      const customTackle = customGearItems.map((item, i) => ({ ...item, idx: i })).filter(item => item.category === 'tackle');
+      if (customTackle.length > 0) {
+        html += `<div class="checklist-group"><h4>🎣 Custom Tackle</h4>`;
+        customTackle.forEach(item => { html += renderItem(item.text, 'cust_' + item.idx, item.idx); });
+        html += `</div>`;
+      }
+
       const extras = customGearItems.map((item, i) => ({ ...item, idx: i })).filter(item => item.category === 'extras');
       if (extras.length > 0) {
         html += `<div class="checklist-group"><h4>➕ General Extras & Provisions</h4>`;
@@ -1115,6 +1210,69 @@
         setTimeout(() => creatorMap.invalidateSize(), 150);
       }
     };
+
+    function buildWindowCard(centerDate, halfWidthHr, dayStart, dayEnd, id) {
+      const s = new Date(centerDate.getTime() - halfWidthHr * 3600000);
+      const e = new Date(centerDate.getTime() + halfWidthHr * 3600000);
+      const sHr = (s.getTime() - dayStart.getTime()) / 3600000;
+      const eHr = (e.getTime() - dayStart.getTime()) / 3600000;
+
+      let sub = '';
+      if (s < dayStart) sub = '<span class="day-offset">previous day</span>';
+      else if (e >= dayEnd) sub = '<span class="day-offset">next day</span>';
+
+      const isSelected = activeWindow && activeWindow.id === id;
+      return `
+        <div class="time-card ${isSelected ? 'active-window' : ''}" onclick="selectWindow('${id}', ${sHr}, ${eHr}, 'rgba(255,255,255,0.42)')">
+          <div class="time-card-text">${formatClock(s)} – ${formatClock(e)}${sub}</div>
+        </div>
+      `;
+    }
+
+    window.selectWindow = function(id, sHr, eHr, color) {
+      if (activeWindow && activeWindow.id === id) activeWindow = null;
+      else activeWindow = { id, sHr, eHr, color };
+      renderSolunar();
+    };
+
+    function renderSolunar() {
+      const loc = LOCATIONS[currentLocKey];
+      const data = calculateSolunarAndTides(selectedDate, loc);
+      currentData = data;
+      const score = data.score;
+
+      document.getElementById('score-val').textContent = score;
+      document.getElementById('stars-val').textContent = score >= 90 ? '★★★' : (score >= 40 ? '★★' : (score >= 20 ? '★' : ''));
+
+      let label = 'Very high fish activity';
+      if (score < 20) label = 'Very low fish activity';
+      else if (score < 40) label = 'Low fish activity';
+      else if (score < 70) label = 'Average fish activity';
+      else if (score < 85) label = 'High fish activity';
+      document.getElementById('label-val').textContent = label;
+
+      document.getElementById('gauge-ticks').style.strokeDashoffset = (301.59 * (1 - score / 100)).toFixed(2);
+
+      const dayMajors = data.majors.filter(t => t >= data.dayStart && t < data.dayEnd);
+      const dayMinors = data.minors.filter(t => t >= data.dayStart && t < data.dayEnd);
+
+      document.getElementById('major-list').innerHTML = dayMajors.map((t, i) => buildWindowCard(t, 1.25, data.dayStart, data.dayEnd, 'maj_' + i)).join('') || '<div class="time-card">–</div>';
+      document.getElementById('minor-list').innerHTML = dayMinors.map((t, i) => buildWindowCard(t, 0.75, data.dayStart, data.dayEnd, 'min_' + i)).join('') || '<div class="time-card">–</div>';
+
+      document.getElementById('tide-area-title').textContent = `${loc.name} Tides`;
+      document.getElementById('tide-diff-badge').textContent = loc.diffText;
+      document.getElementById('tide-list').innerHTML = data.dayTides.map(t => `<div class="tide-item"><span class="tide-type">${t.type}</span><span>${formatClock(t.time)}</span></div>`).join('');
+
+      document.getElementById('burley-box').className = `burley-box ${showBurleyMode ? 'show' : ''}`;
+      document.getElementById('burley-list').innerHTML = data.burleyWindows.map((bw, idx) => {
+        const sHr = (bw.start.getTime() - data.dayStart.getTime()) / 3600000;
+        const eHr = (bw.end.getTime() - data.dayStart.getTime()) / 3600000;
+        return `<div class="burley-item" onclick="selectWindow('bur_${idx}', ${sHr}, ${eHr}, 'rgba(0, 255, 136, 0.45)')"><span><strong>${bw.flowDir}:</strong></span><span>${formatClock(bw.start)} – ${formatClock(bw.end)}</span></div>`;
+      }).join('');
+
+      drawChart(data);
+      runRoutingAndTimeline();
+    }
 
     function drawChart(data) {
       const svg = document.getElementById('curve-svg');
@@ -1289,11 +1447,15 @@
       renderSolunar();
     };
 
-    loadProfile();
-    renderDateStrip();
-    renderChecklist();
-    renderSolunar();
-    setTimeout(initMaps, 200);
+    // DOMContentLoaded Initialization to guarantee zero loading errors
+    document.addEventListener('DOMContentLoaded', () => {
+      loadProfile();
+      renderDateStrip();
+      renderSpeciesPills();
+      renderChecklist();
+      renderSolunar();
+      setTimeout(initMaps, 100);
+    });
   </script>
 </body>
 </html>
