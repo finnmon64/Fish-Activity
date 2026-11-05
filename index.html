@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#115ec1" />
+  <meta name="theme-color" content="#1261c4" />
   <title>Fish Activity</title>
   <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
   <style>
     :root {
-      --bg-top: #115ec1;
-      --bg-bottom: #186bd4;
+      --bg-top: #105cc0;
+      --bg-bottom: #1668cf;
       --text-main: #ffffff;
-      --text-muted: rgba(255, 255, 255, 0.68);
-      --grid-line: rgba(255, 255, 255, 0.14);
-      --highlight: #ffeb3b;
+      --text-muted: rgba(255, 255, 255, 0.7);
+      --grid-line: rgba(255, 255, 255, 0.16);
+      --card-bg: rgba(0, 0, 0, 0.12);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; font-family: -apple-system, BlinkMacSystemFont, "Roboto", "Segoe UI", sans-serif; }
     body {
@@ -25,96 +25,85 @@
       align-items: center;
       user-select: none;
     }
-    .app-shell { width: 100%; max-width: 440px; min-height: 100vh; display: flex; flex-direction: column; position: relative; padding-bottom: 70px; }
+    .app-shell { width: 100%; max-width: 440px; min-height: 100vh; display: flex; flex-direction: column; position: relative; padding-bottom: 75px; }
 
     header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 4px; }
     header h1 { font-size: 1.25rem; font-weight: 500; }
 
-    .date-strip { display: grid; grid-template-columns: repeat(7, 1fr); padding: 6px 10px; text-align: center; }
+    .date-strip { display: grid; grid-template-columns: repeat(7, 1fr); padding: 4px 10px 6px; text-align: center; }
     .date-item { padding: 6px 0; cursor: pointer; color: var(--text-muted); border-bottom: 2.5px solid transparent; }
     .date-item.active { color: #fff; border-bottom-color: #fff; font-weight: 600; }
     .date-item .day-num { font-size: 1.15rem; margin-bottom: 2px; }
     .date-item .day-name { font-size: 0.7rem; text-transform: uppercase; }
 
-    .loc-row { display: flex; justify-content: flex-end; padding: 4px 18px 0; }
+    .loc-row { display: flex; justify-content: flex-end; padding: 2px 18px 0; }
     .loc-select {
-      background: rgba(0, 0, 0, 0.2);
+      background: rgba(0, 0, 0, 0.22);
       color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.32);
       border-radius: 14px;
       padding: 4px 10px;
-      font-size: 0.8rem;
+      font-size: 0.82rem;
       outline: none;
+      cursor: pointer;
     }
-    .loc-select option { background: #115ec1; }
+    .loc-select option { background: #105cc0; color: #fff; }
 
-    .score-section { display: flex; flex-direction: column; align-items: center; margin: 6px 0 8px; }
-    .gauge-box { width: 110px; height: 110px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .score-section { display: flex; flex-direction: column; align-items: center; margin: 4px 0 6px; }
+    .gauge-box { width: 112px; height: 112px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
-    .score-val { font-size: 2.5rem; font-weight: 600; line-height: 1; }
+    .score-val { font-size: 2.6rem; font-weight: 500; line-height: 1; margin-top: -2px; }
     .stars-val { font-size: 0.8rem; letter-spacing: 2px; margin-top: 3px; min-height: 15px; }
-    .label-val { font-size: 1.1rem; font-weight: 500; margin-top: 6px; }
+    .label-val { font-size: 1.15rem; font-weight: 500; margin-top: 8px; }
 
-    /* Scrub Readout Bar */
-    .scrub-info {
-      height: 22px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 12px;
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: #fff;
-      margin-bottom: 2px;
-    }
-    .scrub-pill {
-      background: rgba(255,255,255,0.2);
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 0.75rem;
-    }
-
-    /* Chart with reserved space for high/med/low labels */
-    .chart-container { position: relative; width: 100%; height: 210px; touch-action: none; }
-    .band-label { position: absolute; left: 8px; font-size: 0.65rem; font-weight: 600; color: rgba(255,255,255,0.65); pointer-events: none; }
-    .band-high { top: 20px; }
-    .band-med { top: 78px; }
-    .band-low { top: 136px; }
+    /* Chart area with safe left pad for high/med/low labels */
+    .chart-container { position: relative; width: 100%; height: 216px; margin-top: 4px; touch-action: none; cursor: crosshair; }
+    .band-label { position: absolute; left: 8px; font-size: 0.64rem; font-weight: 600; color: rgba(255,255,255,0.7); pointer-events: none; }
+    .band-high { top: 22px; }
+    .band-med { top: 82px; }
+    .band-low { top: 142px; }
     #curve-svg { width: 100%; height: 100%; display: block; }
 
     /* Window Cards */
     .times-grid { display: grid; grid-template-columns: 1fr 1fr; padding: 12px 16px; gap: 10px; text-align: center; }
-    .times-col h3 { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; }
+    .times-col h3 { font-size: 0.74rem; font-weight: 500; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.3px; }
     .time-card {
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 8px;
+      background: var(--card-bg);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 4px;
       padding: 6px 4px;
       margin-bottom: 6px;
       cursor: pointer;
-      transition: all 0.2s;
+      color: #fff;
+      transition: background 0.15s, color 0.15s;
     }
+    /* Active highlight style matching app screenshot (White box + black text) */
     .time-card.active-window {
-      background: rgba(255, 235, 59, 0.25);
-      border-color: var(--highlight);
-      box-shadow: 0 0 8px rgba(255, 235, 59, 0.4);
+      background: #ffffff !important;
+      color: #1a1a1a !important;
+      border-color: #ffffff !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
     }
-    .time-card-text { font-size: 0.82rem; font-weight: 500; }
+    .time-card.active-window .day-offset { color: #555555 !important; }
+    .time-card-text { font-size: 0.86rem; font-weight: 500; }
     .day-offset { display: block; font-size: 0.65rem; color: var(--text-muted); font-style: italic; }
 
     .fab-cal {
       position: fixed;
       bottom: 18px;
       right: max(18px, calc(50vw - 200px));
-      width: 48px;
-      height: 48px;
+      width: 50px;
+      height: 50px;
       border-radius: 50%;
       background: #ffffff;
-      color: #115ec1;
+      color: #105cc0;
       border: none;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-      font-size: 1.25rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      font-size: 1.3rem;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     #date-picker { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
   </style>
@@ -147,15 +136,11 @@
       <div class="label-val" id="label-val">--</div>
     </div>
 
-    <div class="scrub-info" id="scrub-bar">
-      <span>Drag curve to view hours</span>
-    </div>
-
     <div class="chart-container" id="chart-area">
       <span class="band-label band-high">HIGH</span>
       <span class="band-label band-med">MEDIUM</span>
       <span class="band-label band-low">LOW</span>
-      <svg id="curve-svg" viewBox="0 0 440 210" preserveAspectRatio="none"></svg>
+      <svg id="curve-svg" viewBox="0 0 440 216" preserveAspectRatio="none"></svg>
     </div>
 
     <div class="times-grid">
@@ -174,13 +159,14 @@
   </div>
 
   <script>
-    const TZ = 'Pacific/Auckland';
     let currentCoords = { lat: -41.0910, lon: 174.7830 };
     let selectedDate = new Date();
     selectedDate.setHours(12, 0, 0, 0);
 
-    let activeHighlight = null; // { startHr, endHr }
+    // Track active column highlights: { id: string, sHr: number, eHr: number }
+    let activeWindow = null;
     let scrubHour = null;
+    let currentSolunarData = null;
 
     function getLocalDayBounds(d) {
       const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
@@ -250,7 +236,7 @@
       if (s < dayStart) sub = '<span class="day-offset">previous day</span>';
       else if (e >= dayEnd) sub = '<span class="day-offset">next day</span>';
 
-      const isSelected = activeHighlight && activeHighlight.id === id;
+      const isSelected = activeWindow && activeWindow.id === id;
 
       return `
         <div class="time-card ${isSelected ? 'active-window' : ''}" 
@@ -261,15 +247,13 @@
     }
 
     window.toggleHighlight = function(id, sHr, eHr) {
-      if (activeHighlight && activeHighlight.id === id) {
-        activeHighlight = null;
+      if (activeWindow && activeWindow.id === id) {
+        activeWindow = null;
       } else {
-        activeHighlight = { id, sHr, eHr };
+        activeWindow = { id, sHr, eHr };
       }
       render();
     };
-
-    let currentSolunarData = null;
 
     function evaluateActivity(hr, data) {
       const tMs = data.dayStart.getTime() + hr * 3600000;
@@ -340,15 +324,15 @@
 
     function drawChart(data) {
       const svg = document.getElementById('curve-svg');
-      const W = 440, H = 210;
-      const leftPad = 64; // Clears HIGH/MED/LOW text
+      const W = 440, H = 216;
+      const leftPad = 62; // Prevents HIGH/MED/LOW overlap
       const rightPad = 12;
-      const topPad = 20;
-      const botPad = 32;
+      const topPad = 22;
+      const botPad = 34;
       const graphW = W - leftPad - rightPad;
       const graphH = H - topPad - botPad;
 
-      // 1. Gridlines
+      // Gridlines
       const yHigh = topPad + graphH * 0.18;
       const yMed = topPad + graphH * 0.52;
       const yLow = topPad + graphH * 0.86;
@@ -359,27 +343,18 @@
         <line x1="${leftPad}" y1="${yLow}" x2="${W - rightPad}" y2="${yLow}" stroke="var(--grid-line)" stroke-dasharray="3,3" />
       `;
 
-      // 2. Vertical Hours
+      // Vertical 4-Hour Gridlines
       const hrs = [4, 8, 12, 16, 20];
       const hrLabels = ['4:00 am', '8:00 am', '12:00 pm', '4:00 pm', '8:00 pm'];
       hrs.forEach((h, i) => {
         const x = leftPad + (h / 24) * graphW;
         svgHTML += `
           <line x1="${x}" y1="${topPad - 6}" x2="${x}" y2="${H - botPad}" stroke="var(--grid-line)" />
-          <text x="${x}" y="${H - 10}" fill="rgba(255,255,255,0.7)" font-size="10.5" text-anchor="middle">${hrLabels[i]}</text>
+          <text x="${x}" y="${H - 12}" fill="rgba(255,255,255,0.7)" font-size="10.5" text-anchor="middle">${hrLabels[i]}</text>
         `;
       });
 
-      // 3. Highlighted Window Band
-      if (activeHighlight) {
-        const x1 = Math.max(leftPad, leftPad + (activeHighlight.sHr / 24) * graphW);
-        const x2 = Math.min(W - rightPad, leftPad + (activeHighlight.endHr / 24) * graphW);
-        if (x2 > x1) {
-          svgHTML += `<rect x="${x1}" y="${topPad}" width="${x2 - x1}" height="${graphH}" fill="rgba(255, 235, 59, 0.22)" stroke="none" />`;
-        }
-      }
-
-      // 4. Sample Continuous Wave
+      // Sample Wave Points
       const pts = [];
       const steps = 96;
       for (let i = 0; i <= steps; i++) {
@@ -390,14 +365,33 @@
         pts.push({ x, y, hr, act });
       }
 
+      // 3. Highlighted Window Column Blocks (clipped under the curve)
+      if (activeWindow) {
+        const x1 = Math.max(leftPad, leftPad + (activeWindow.sHr / 24) * graphW);
+        const x2 = Math.min(W - rightPad, leftPad + (activeWindow.endHr / 24) * graphW);
+        if (x2 > x1) {
+          // Construct clipped column under the exact curve path
+          const colPts = pts.filter(p => p.x >= x1 && p.x <= x2);
+          const yStart = topPad + graphH * (1 - evaluateActivity(activeWindow.sHr, data) / 100);
+          const yEnd = topPad + graphH * (1 - evaluateActivity(activeWindow.endHr, data) / 100);
+
+          let colPath = `M ${x1.toFixed(1)},${H - botPad} L ${x1.toFixed(1)},${yStart.toFixed(1)} `;
+          colPts.forEach(p => { colPath += `L ${p.x.toFixed(1)},${p.y.toFixed(1)} `; });
+          colPath += `L ${x2.toFixed(1)},${yEnd.toFixed(1)} L ${x2.toFixed(1)},${H - botPad} Z`;
+
+          svgHTML += `<path d="${colPath}" fill="rgba(255, 255, 255, 0.42)" stroke="none" />`;
+        }
+      }
+
+      // 4. Fill & Main White Line Path
       const lineD = pts.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
       const fillD = `${lineD} L ${(W - rightPad).toFixed(1)},${H - botPad} L ${leftPad},${H - botPad} Z`;
 
       svgHTML += `
         <defs>
           <linearGradient id="curveGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
-            <stop offset="100%" stop-color="#ffffff" stop-opacity="0.03"/>
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.32"/>
+            <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
           </linearGradient>
         </defs>
         <path d="${fillD}" fill="url(#curveGrad)" stroke="none" />
@@ -413,14 +407,31 @@
         svgHTML += `<circle cx="${curX.toFixed(1)}" cy="${curY.toFixed(1)}" r="5.5" fill="#e53935" stroke="#ffffff" stroke-width="2" />`;
       }
 
-      // 6. Interactive Scrub Cursor
+      // 6. Interactive Scrubber Tooltip & Line (matches screenshot style)
       if (scrubHour !== null) {
         const sx = leftPad + (scrubHour / 24) * graphW;
         const sAct = evaluateActivity(scrubHour, data);
         const sy = topPad + graphH * (1 - sAct / 100);
+
+        const totalMinutes = Math.round(scrubHour * 60);
+        let h = Math.floor(totalMinutes / 60) % 24;
+        const m = totalMinutes % 60;
+        const ampm = h >= 12 ? 'pm' : 'am';
+        const h12 = h % 12 || 12;
+        const timeLabel = `${h12}:${m < 10 ? '0' : ''}${m} ${ampm}`;
+
+        // Pill dimensions
+        const pillW = 64;
+        const pillH = 20;
+        const pillX = Math.max(leftPad + 4, Math.min(W - rightPad - pillW - 4, sx - pillW / 2));
+        const pillY = Math.max(topPad - 6, sy - 28);
+
         svgHTML += `
-          <line x1="${sx}" y1="${topPad}" x2="${sx}" y2="${H - botPad}" stroke="#ffeb3b" stroke-width="1.5" stroke-dasharray="2,2" />
-          <circle cx="${sx}" cy="${sy}" r="5" fill="#ffeb3b" stroke="#000" stroke-width="1.5" />
+          <line x1="${sx.toFixed(1)}" y1="${topPad}" x2="${sx.toFixed(1)}" y2="${H - botPad}" stroke="rgba(255,255,255,0.75)" stroke-width="1.2" />
+          <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="4.5" fill="#ffffff" stroke="#1261c4" stroke-width="2" />
+          <!-- Dark Tooltip Pill -->
+          <rect x="${pillX.toFixed(1)}" y="${pillY.toFixed(1)}" width="${pillW}" height="${pillH}" rx="3" fill="#1b2430" stroke="rgba(255,255,255,0.2)" stroke-width="0.8" />
+          <text x="${(pillX + pillW / 2).toFixed(1)}" y="${(pillY + 14).toFixed(1)}" fill="#ffffff" font-size="11" font-weight="500" text-anchor="middle">${timeLabel}</text>
         `;
       }
 
@@ -435,46 +446,21 @@
       const rect = chartArea.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const W = 440;
-      const leftPad = 64;
+      const leftPad = 62;
       const rightPad = 12;
       const graphW = W - leftPad - rightPad;
 
-      // Scale to SVG coordinate space
       const scale = W / rect.width;
       const clickX = (clientX - rect.left) * scale;
       const clampedX = Math.max(leftPad, Math.min(W - rightPad, clickX));
-      const hr = ((clampedX - leftPad) / graphW) * 24;
-
-      scrubHour = Math.max(0, Math.min(24, hr));
-
-      // Calculate time readout
-      const totalMinutes = Math.round(scrubHour * 60);
-      let h = Math.floor(totalMinutes / 60) % 24;
-      const m = totalMinutes % 60;
-      const ampm = h >= 12 ? 'pm' : 'am';
-      const h12 = h % 12 || 12;
-      const timeStr = `${h12}:${m < 10 ? '0' : ''}${m} ${ampm}`;
-
-      const act = Math.round(evaluateActivity(scrubHour, currentSolunarData));
-      let lvl = 'Low';
-      if (act >= 70) lvl = 'High';
-      else if (act >= 40) lvl = 'Medium';
-
-      document.getElementById('scrub-bar').innerHTML = `
-        <span class="scrub-pill">${timeStr}</span>
-        <span>Activity: <strong>${act}%</strong> (${lvl})</span>
-      `;
+      scrubHour = ((clampedX - leftPad) / graphW) * 24;
 
       drawChart(currentSolunarData);
     }
 
     chartArea.addEventListener('pointerdown', (e) => { handleScrub(e); chartArea.setPointerCapture(e.pointerId); });
-    chartArea.addEventListener('pointermove', (e) => { if (e.buttons) handleScrub(e); });
-    chartArea.addEventListener('pointerup', () => {
-      // Optional: keep last position or reset
-    });
+    chartArea.addEventListener('pointermove', (e) => { if (e.buttons || e.touches) handleScrub(e); });
 
-    // Date Strip
     function renderDateStrip() {
       const strip = document.getElementById('date-strip');
       strip.innerHTML = '';
@@ -494,9 +480,8 @@
         `;
         cell.addEventListener('click', () => {
           selectedDate = d;
-          activeHighlight = null;
+          activeWindow = null;
           scrubHour = null;
-          document.getElementById('scrub-bar').innerHTML = `<span>Drag curve to view hours</span>`;
           renderDateStrip();
           render();
         });
@@ -504,7 +489,6 @@
       }
     }
 
-    // Handlers
     document.getElementById('loc-select').addEventListener('change', (e) => {
       const [lat, lon] = e.target.value.split(',').map(Number);
       currentCoords = { lat, lon };
@@ -520,7 +504,8 @@
       if (!e.target.value) return;
       const [y, m, d] = e.target.value.split('-').map(Number);
       selectedDate = new Date(y, m - 1, d, 12, 0, 0);
-      activeHighlight = null;
+      activeWindow = null;
+      scrubHour = null;
       renderDateStrip();
       render();
     });
