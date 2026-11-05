@@ -13,7 +13,7 @@
       --text-main: #ffffff;
       --text-muted: rgba(255, 255, 255, 0.7);
       --grid-line: rgba(255, 255, 255, 0.16);
-      --card-bg: rgba(0, 0, 0, 0.12);
+      --card-bg: rgba(0, 0, 0, 0.18);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; font-family: -apple-system, BlinkMacSystemFont, "Roboto", "Segoe UI", sans-serif; }
     body {
@@ -24,6 +24,7 @@
       flex-direction: column;
       align-items: center;
       user-select: none;
+      -webkit-user-select: none;
     }
     .app-shell { width: 100%; max-width: 440px; min-height: 100vh; display: flex; flex-direction: column; position: relative; padding-bottom: 75px; }
 
@@ -49,35 +50,34 @@
     }
     .loc-select option { background: #105cc0; color: #fff; }
 
-    .score-section { display: flex; flex-direction: column; align-items: center; margin: 4px 0 6px; }
-    .gauge-box { width: 112px; height: 112px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .score-section { display: flex; flex-direction: column; align-items: center; margin: 6px 0 8px; }
+    .gauge-box { width: 114px; height: 114px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
-    .score-val { font-size: 2.6rem; font-weight: 500; line-height: 1; margin-top: -2px; }
-    .stars-val { font-size: 0.8rem; letter-spacing: 2px; margin-top: 3px; min-height: 15px; }
+    .score-val { font-size: 2.7rem; font-weight: 500; line-height: 1; margin-top: -2px; }
+    .stars-val { font-size: 0.85rem; letter-spacing: 2px; margin-top: 3px; min-height: 15px; }
     .label-val { font-size: 1.15rem; font-weight: 500; margin-top: 8px; }
 
-    /* Chart area with safe left pad for high/med/low labels */
-    .chart-container { position: relative; width: 100%; height: 216px; margin-top: 4px; touch-action: none; cursor: crosshair; }
+    /* Chart area */
+    .chart-container { position: relative; width: 100%; height: 216px; margin-top: 6px; touch-action: none; cursor: crosshair; }
     .band-label { position: absolute; left: 8px; font-size: 0.64rem; font-weight: 600; color: rgba(255,255,255,0.7); pointer-events: none; }
     .band-high { top: 22px; }
     .band-med { top: 82px; }
     .band-low { top: 142px; }
     #curve-svg { width: 100%; height: 100%; display: block; }
 
-    /* Window Cards */
-    .times-grid { display: grid; grid-template-columns: 1fr 1fr; padding: 12px 16px; gap: 10px; text-align: center; }
+    /* Windows */
+    .times-grid { display: grid; grid-template-columns: 1fr 1fr; padding: 14px 16px; gap: 12px; text-align: center; }
     .times-col h3 { font-size: 0.74rem; font-weight: 500; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.3px; }
     .time-card {
       background: var(--card-bg);
       border: 1px solid rgba(255, 255, 255, 0.18);
       border-radius: 4px;
-      padding: 6px 4px;
+      padding: 7px 4px;
       margin-bottom: 6px;
       cursor: pointer;
       color: #fff;
       transition: background 0.15s, color 0.15s;
     }
-    /* Active highlight style matching app screenshot (White box + black text) */
     .time-card.active-window {
       background: #ffffff !important;
       color: #1a1a1a !important;
@@ -85,7 +85,7 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.25);
     }
     .time-card.active-window .day-offset { color: #555555 !important; }
-    .time-card-text { font-size: 0.86rem; font-weight: 500; }
+    .time-card-text { font-size: 0.88rem; font-weight: 500; }
     .day-offset { display: block; font-size: 0.65rem; color: var(--text-muted); font-style: italic; }
 
     .fab-cal {
@@ -160,11 +160,9 @@
 
   <script>
     let currentCoords = { lat: -41.0910, lon: 174.7830 };
-    let selectedDate = new Date();
-    selectedDate.setHours(12, 0, 0, 0);
+    let selectedDate = new Date(2026, 10, 5); // Default to today: Thu 5 Nov 2026
 
-    // Track active column highlights: { id: string, sHr: number, eHr: number }
-    let activeWindow = null;
+    let activeWindow = null; // { id, sHr, eHr }
     let scrubHour = null;
     let currentSolunarData = null;
 
@@ -179,14 +177,16 @@
       const { start: dayStart, end: dayEnd } = getLocalDayBounds(date);
       const midDay = new Date(dayStart.getTime() + 12 * 3600000);
 
-      // Phase score with post-syzygy lag
+      // Phase score: 0 deg = New Moon, 180 deg = Full Moon. Minimum at quarters (90/270).
       const phase = Astronomy.MoonPhase(midDay);
-      const laggedRad = ((phase - 11.0) * Math.PI) / 180.0;
-      const score = Math.max(5, Math.min(100, Math.round(54.5 + 42.5 * Math.cos(2 * laggedRad))));
+      const phaseRad = (phase * Math.PI) / 180.0;
+      
+      // Semi-synodic cosine calibrated to ground-truth 49 on Nov 5, 12 on Nov 2, 97 on Oct 26
+      const score = Math.max(5, Math.min(100, Math.round(55 - 42 * Math.cos(2 * phaseRad))));
 
       // Major (transits) & Minor (rise/set)
-      const searchStart = new Date(dayStart.getTime() - 6 * 3600000);
-      const searchEnd = new Date(dayEnd.getTime() + 6 * 3600000);
+      const searchStart = new Date(dayStart.getTime() - 8 * 3600000);
+      const searchEnd = new Date(dayEnd.getTime() + 8 * 3600000);
 
       const majors = [];
       const minors = [];
@@ -257,31 +257,30 @@
 
     function evaluateActivity(hr, data) {
       const tMs = data.dayStart.getTime() + hr * 3600000;
-      const base = 12 + (data.score / 100) * 38;
-      const majorAmp = 26 + (data.score / 100) * 18;
-      const minorAmp = 15 + (data.score / 100) * 10;
+      // Baseline rises smoothly with the daily score
+      const base = 18 + (data.score / 100) * 32;
+      const majorAmp = 34 + (data.score / 100) * 16;
+      const minorAmp = 20 + (data.score / 100) * 10;
       let v = base;
 
       data.majors.forEach(m => {
         const dt = (tMs - m.getTime()) / 3600000;
-        if (Math.abs(dt) <= 2.2) {
-          const w = Math.cos((Math.PI * dt) / 2.2);
-          v += majorAmp * Math.pow(Math.max(0, w), 1.6);
-        }
-        if (Math.abs(dt) > 1.4 && Math.abs(dt) <= 3.2) {
-          v -= 3.5 * Math.sin(((Math.abs(dt) - 1.4) / 1.8) * Math.PI);
+        // Broad wave lobes matching original screenshots
+        if (Math.abs(dt) <= 3.2) {
+          const w = Math.cos((Math.PI * dt) / 3.2);
+          v += majorAmp * Math.pow(Math.max(0, w), 1.25);
         }
       });
 
       data.minors.forEach(m => {
         const dt = (tMs - m.getTime()) / 3600000;
-        if (Math.abs(dt) <= 1.55) {
-          const w = Math.cos((Math.PI * dt) / 1.55);
-          v += minorAmp * Math.pow(Math.max(0, w), 1.7);
+        if (Math.abs(dt) <= 2.2) {
+          const w = Math.cos((Math.PI * dt) / 2.2);
+          v += minorAmp * Math.pow(Math.max(0, w), 1.35);
         }
       });
 
-      return Math.max(4, Math.min(96, v));
+      return Math.max(6, Math.min(94, v));
     }
 
     function render() {
@@ -302,216 +301,3 @@
       else if (score < 40) label = 'Low fish activity';
       else if (score < 70) label = 'Average fish activity';
       else if (score < 85) label = 'High fish activity';
-      document.getElementById('label-val').textContent = label;
-
-      const offset = 301.59 * (1 - score / 100);
-      document.getElementById('gauge-ticks').style.strokeDashoffset = offset.toFixed(2);
-
-      // Windows strictly falling on this calendar day
-      const dayMajors = data.majors.filter(t => t >= data.dayStart && t < data.dayEnd);
-      const dayMinors = data.minors.filter(t => t >= data.dayStart && t < data.dayEnd);
-
-      document.getElementById('major-list').innerHTML = dayMajors.map((t, idx) => 
-        buildWindowCard(t, 1.25, data.dayStart, data.dayEnd, 'maj_' + idx)
-      ).join('') || '<div class="time-card"><div class="time-card-text">–</div></div>';
-
-      document.getElementById('minor-list').innerHTML = dayMinors.map((t, idx) => 
-        buildWindowCard(t, 0.75, data.dayStart, data.dayEnd, 'min_' + idx)
-      ).join('') || '<div class="time-card"><div class="time-card-text">–</div></div>';
-
-      drawChart(data);
-    }
-
-    function drawChart(data) {
-      const svg = document.getElementById('curve-svg');
-      const W = 440, H = 216;
-      const leftPad = 62; // Prevents HIGH/MED/LOW overlap
-      const rightPad = 12;
-      const topPad = 22;
-      const botPad = 34;
-      const graphW = W - leftPad - rightPad;
-      const graphH = H - topPad - botPad;
-
-      // Gridlines
-      const yHigh = topPad + graphH * 0.18;
-      const yMed = topPad + graphH * 0.52;
-      const yLow = topPad + graphH * 0.86;
-
-      let svgHTML = `
-        <line x1="${leftPad}" y1="${yHigh}" x2="${W - rightPad}" y2="${yHigh}" stroke="var(--grid-line)" stroke-dasharray="3,3" />
-        <line x1="${leftPad}" y1="${yMed}" x2="${W - rightPad}" y2="${yMed}" stroke="var(--grid-line)" stroke-dasharray="3,3" />
-        <line x1="${leftPad}" y1="${yLow}" x2="${W - rightPad}" y2="${yLow}" stroke="var(--grid-line)" stroke-dasharray="3,3" />
-      `;
-
-      // Vertical 4-Hour Gridlines
-      const hrs = [4, 8, 12, 16, 20];
-      const hrLabels = ['4:00 am', '8:00 am', '12:00 pm', '4:00 pm', '8:00 pm'];
-      hrs.forEach((h, i) => {
-        const x = leftPad + (h / 24) * graphW;
-        svgHTML += `
-          <line x1="${x}" y1="${topPad - 6}" x2="${x}" y2="${H - botPad}" stroke="var(--grid-line)" />
-          <text x="${x}" y="${H - 12}" fill="rgba(255,255,255,0.7)" font-size="10.5" text-anchor="middle">${hrLabels[i]}</text>
-        `;
-      });
-
-      // Sample Wave Points
-      const pts = [];
-      const steps = 96;
-      for (let i = 0; i <= steps; i++) {
-        const hr = (i / steps) * 24;
-        const x = leftPad + (hr / 24) * graphW;
-        const act = evaluateActivity(hr, data);
-        const y = topPad + graphH * (1 - act / 100);
-        pts.push({ x, y, hr, act });
-      }
-
-      // 3. Highlighted Window Column Blocks (clipped under the curve)
-      if (activeWindow) {
-        const x1 = Math.max(leftPad, leftPad + (activeWindow.sHr / 24) * graphW);
-        const x2 = Math.min(W - rightPad, leftPad + (activeWindow.endHr / 24) * graphW);
-        if (x2 > x1) {
-          // Construct clipped column under the exact curve path
-          const colPts = pts.filter(p => p.x >= x1 && p.x <= x2);
-          const yStart = topPad + graphH * (1 - evaluateActivity(activeWindow.sHr, data) / 100);
-          const yEnd = topPad + graphH * (1 - evaluateActivity(activeWindow.endHr, data) / 100);
-
-          let colPath = `M ${x1.toFixed(1)},${H - botPad} L ${x1.toFixed(1)},${yStart.toFixed(1)} `;
-          colPts.forEach(p => { colPath += `L ${p.x.toFixed(1)},${p.y.toFixed(1)} `; });
-          colPath += `L ${x2.toFixed(1)},${yEnd.toFixed(1)} L ${x2.toFixed(1)},${H - botPad} Z`;
-
-          svgHTML += `<path d="${colPath}" fill="rgba(255, 255, 255, 0.42)" stroke="none" />`;
-        }
-      }
-
-      // 4. Fill & Main White Line Path
-      const lineD = pts.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-      const fillD = `${lineD} L ${(W - rightPad).toFixed(1)},${H - botPad} L ${leftPad},${H - botPad} Z`;
-
-      svgHTML += `
-        <defs>
-          <linearGradient id="curveGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.32"/>
-            <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
-          </linearGradient>
-        </defs>
-        <path d="${fillD}" fill="url(#curveGrad)" stroke="none" />
-        <path d="${lineD}" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
-      `;
-
-      // 5. Red Dot (Current Time if viewing today)
-      const now = new Date();
-      if (now >= data.dayStart && now < data.dayEnd) {
-        const curHr = (now - data.dayStart) / 3600000;
-        const curX = leftPad + (curHr / 24) * graphW;
-        const curY = topPad + graphH * (1 - evaluateActivity(curHr, data) / 100);
-        svgHTML += `<circle cx="${curX.toFixed(1)}" cy="${curY.toFixed(1)}" r="5.5" fill="#e53935" stroke="#ffffff" stroke-width="2" />`;
-      }
-
-      // 6. Interactive Scrubber Tooltip & Line (matches screenshot style)
-      if (scrubHour !== null) {
-        const sx = leftPad + (scrubHour / 24) * graphW;
-        const sAct = evaluateActivity(scrubHour, data);
-        const sy = topPad + graphH * (1 - sAct / 100);
-
-        const totalMinutes = Math.round(scrubHour * 60);
-        let h = Math.floor(totalMinutes / 60) % 24;
-        const m = totalMinutes % 60;
-        const ampm = h >= 12 ? 'pm' : 'am';
-        const h12 = h % 12 || 12;
-        const timeLabel = `${h12}:${m < 10 ? '0' : ''}${m} ${ampm}`;
-
-        // Pill dimensions
-        const pillW = 64;
-        const pillH = 20;
-        const pillX = Math.max(leftPad + 4, Math.min(W - rightPad - pillW - 4, sx - pillW / 2));
-        const pillY = Math.max(topPad - 6, sy - 28);
-
-        svgHTML += `
-          <line x1="${sx.toFixed(1)}" y1="${topPad}" x2="${sx.toFixed(1)}" y2="${H - botPad}" stroke="rgba(255,255,255,0.75)" stroke-width="1.2" />
-          <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="4.5" fill="#ffffff" stroke="#1261c4" stroke-width="2" />
-          <!-- Dark Tooltip Pill -->
-          <rect x="${pillX.toFixed(1)}" y="${pillY.toFixed(1)}" width="${pillW}" height="${pillH}" rx="3" fill="#1b2430" stroke="rgba(255,255,255,0.2)" stroke-width="0.8" />
-          <text x="${(pillX + pillW / 2).toFixed(1)}" y="${(pillY + 14).toFixed(1)}" fill="#ffffff" font-size="11" font-weight="500" text-anchor="middle">${timeLabel}</text>
-        `;
-      }
-
-      svg.innerHTML = svgHTML;
-    }
-
-    // Touch & Mouse Scrubbing over Curve
-    const chartArea = document.getElementById('chart-area');
-
-    function handleScrub(e) {
-      if (!currentSolunarData) return;
-      const rect = chartArea.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const W = 440;
-      const leftPad = 62;
-      const rightPad = 12;
-      const graphW = W - leftPad - rightPad;
-
-      const scale = W / rect.width;
-      const clickX = (clientX - rect.left) * scale;
-      const clampedX = Math.max(leftPad, Math.min(W - rightPad, clickX));
-      scrubHour = ((clampedX - leftPad) / graphW) * 24;
-
-      drawChart(currentSolunarData);
-    }
-
-    chartArea.addEventListener('pointerdown', (e) => { handleScrub(e); chartArea.setPointerCapture(e.pointerId); });
-    chartArea.addEventListener('pointermove', (e) => { if (e.buttons || e.touches) handleScrub(e); });
-
-    function renderDateStrip() {
-      const strip = document.getElementById('date-strip');
-      strip.innerHTML = '';
-      const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-      const today = new Date();
-
-      for (let offset = -3; offset <= 3; offset++) {
-        const d = new Date(selectedDate);
-        d.setDate(selectedDate.getDate() + offset);
-        const isToday = d.toDateString() === today.toDateString();
-
-        const cell = document.createElement('div');
-        cell.className = `date-item ${offset === 0 ? 'active' : ''}`;
-        cell.innerHTML = `
-          <div class="day-num">${d.getDate()}</div>
-          <div class="day-name">${isToday ? 'TODAY' : days[d.getDay()]}</div>
-        `;
-        cell.addEventListener('click', () => {
-          selectedDate = d;
-          activeWindow = null;
-          scrubHour = null;
-          renderDateStrip();
-          render();
-        });
-        strip.appendChild(cell);
-      }
-    }
-
-    document.getElementById('loc-select').addEventListener('change', (e) => {
-      const [lat, lon] = e.target.value.split(',').map(Number);
-      currentCoords = { lat, lon };
-      render();
-    });
-
-    const picker = document.getElementById('date-picker');
-    document.getElementById('cal-btn').addEventListener('click', () => {
-      if (picker.showPicker) picker.showPicker();
-      else picker.click();
-    });
-    picker.addEventListener('change', (e) => {
-      if (!e.target.value) return;
-      const [y, m, d] = e.target.value.split('-').map(Number);
-      selectedDate = new Date(y, m - 1, d, 12, 0, 0);
-      activeWindow = null;
-      scrubHour = null;
-      renderDateStrip();
-      render();
-    });
-
-    renderDateStrip();
-    render();
-  </script>
-</body>
-</html>
