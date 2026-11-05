@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#105cc0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Fish Activity & Mission Control</title>
-  <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
@@ -17,167 +17,280 @@
       --grid-line: rgba(255, 255, 255, 0.16);
       --card-bg: rgba(0, 0, 0, 0.18);
       --burley-green: #00e676;
+      --accent-yellow: #ffeb3b;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; font-family: -apple-system, BlinkMacSystemFont, "Roboto", sans-serif; }
-    body { background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%); color: var(--text-main); min-height: 100vh; overflow-x: hidden; }
-    .app-shell { width: 100%; max-width: 440px; min-height: 100vh; margin: 0 auto; display: flex; flex-direction: column; padding-bottom: 70px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; font-family: -apple-system, BlinkMacSystemFont, "Roboto", "Segoe UI", sans-serif; }
+    body {
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .app-shell { width: 100%; max-width: 440px; min-height: 100vh; margin: 0 auto; display: flex; flex-direction: column; padding-bottom: 82px; position: relative; }
 
-    /* Tabs Logic */
+    /* Tabs */
     .tab-content { display: none; flex-direction: column; flex-grow: 1; }
     .tab-content.active { display: flex; }
 
     /* Header & Date Strip */
     header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 4px; }
     header h1 { font-size: 1.25rem; font-weight: 500; }
+    .cal-trigger { background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 16px; padding: 4px 10px; font-size: 0.78rem; cursor: pointer; font-weight: 500; }
+    #date-picker { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+
     .date-strip { display: grid; grid-template-columns: repeat(7, 1fr); padding: 4px 10px 6px; text-align: center; }
-    .date-item { padding: 6px 0; cursor: pointer; color: var(--text-muted); border-bottom: 2.5px solid transparent; }
+    .date-item { padding: 6px 0; cursor: pointer; color: var(--text-muted); border-bottom: 2.5px solid transparent; transition: all 0.15s; }
     .date-item.active { color: #fff; border-bottom-color: #fff; font-weight: 600; }
     .date-item .day-num { font-size: 1.15rem; margin-bottom: 2px; }
     .date-item .day-name { font-size: 0.7rem; text-transform: uppercase; }
 
-    /* Global UI Elements */
+    /* Controls & Panels */
     .controls-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 16px 2px; gap: 8px; }
-    .loc-select { background: rgba(0, 0, 0, 0.22); color: #fff; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 16px; padding: 5px 10px; font-size: 0.8rem; outline: none; cursor: pointer; width: 100%; }
-    .loc-select option { background: #105cc0; color: #fff; }
-    .module-panel { background: rgba(0, 0, 0, 0.18); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 12px; margin: 10px 16px; }
-    .module-header { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; color: #90caf9; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; }
+    .burley-btn {
+      background: rgba(0, 0, 0, 0.22);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 16px;
+      padding: 5px 12px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .burley-btn.active {
+      background: var(--burley-green);
+      color: #062b16;
+      border-color: var(--burley-green);
+      font-weight: 600;
+      box-shadow: 0 0 10px rgba(0, 230, 118, 0.4);
+    }
+    .loc-select {
+      background: rgba(0, 0, 0, 0.22);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 16px;
+      padding: 5px 10px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      outline: none;
+      cursor: pointer;
+    }
+    .loc-select option, .input-group select option { background: #105cc0; color: #fff; }
+
+    .module-panel { background: rgba(0, 0, 0, 0.18); border: 1px solid rgba(255,255,255,0.16); border-radius: 8px; padding: 12px; margin: 8px 16px; }
+    .module-header { font-size: 0.82rem; font-weight: 600; text-transform: uppercase; color: #90caf9; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
 
     /* TAB 1: SOLUNAR */
     .score-section { display: flex; flex-direction: column; align-items: center; margin: 4px 0 6px; }
-    .gauge-box { width: 110px; height: 110px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .gauge-box { width: 112px; height: 112px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
-    .score-val { font-size: 2.6rem; font-weight: 500; line-height: 1; margin-top: -2px; }
+    .score-val { font-size: 2.65rem; font-weight: 500; line-height: 1; margin-top: -2px; }
     .stars-val { font-size: 0.82rem; letter-spacing: 2px; margin-top: 3px; min-height: 14px; }
     .label-val { font-size: 1.12rem; font-weight: 500; margin-top: 6px; }
-    .chart-container { position: relative; width: 100%; height: 214px; margin-top: 2px; }
-    .band-label { position: absolute; left: 8px; font-size: 0.63rem; font-weight: 600; color: rgba(255,255,255,0.7); }
+
+    .chart-container { position: relative; width: 100%; height: 214px; margin-top: 2px; touch-action: none; cursor: crosshair; }
+    .band-label { position: absolute; left: 8px; font-size: 0.63rem; font-weight: 600; color: rgba(255,255,255,0.7); pointer-events: none; }
     .band-high { top: 22px; } .band-med { top: 82px; } .band-low { top: 142px; }
     #curve-svg { width: 100%; height: 100%; display: block; }
+
     .times-grid { display: grid; grid-template-columns: 1fr 1fr; padding: 10px 16px 6px; gap: 10px; text-align: center; }
-    .times-col h3 { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; }
-    .time-card { background: var(--card-bg); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 5px; padding: 6px 4px; margin-bottom: 6px; font-size: 0.85rem; }
+    .times-col h3 { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.4px; }
+    .time-card {
+      background: var(--card-bg);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 5px;
+      padding: 6px 4px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      color: #fff;
+      transition: all 0.15s;
+    }
+    .time-card.active-window {
+      background: #ffffff !important;
+      color: #111111 !important;
+      border-color: #ffffff !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    .time-card.active-window .day-offset { color: #555555 !important; }
+    .time-card-text { font-size: 0.85rem; font-weight: 500; }
+    .day-offset { display: block; font-size: 0.63rem; color: var(--text-muted); font-style: italic; }
+
     .tide-panel { margin: 4px 16px 12px; background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 8px; padding: 10px 12px; }
     .tide-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
-    .tide-diff-badge { background: rgba(255,255,255,0.14); padding: 2px 7px; border-radius: 10px; font-size: 0.68rem; }
+    .tide-diff-badge { background: rgba(255,255,255,0.14); color: #fff; padding: 2px 7px; border-radius: 10px; font-size: 0.68rem; text-transform: none; }
     .tide-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.82rem; }
     .tide-item { background: rgba(255,255,255,0.06); padding: 5px 8px; border-radius: 4px; display: flex; justify-content: space-between; }
     .tide-type { font-weight: 600; color: #90caf9; }
-    .burley-btn { background: rgba(0, 0, 0, 0.22); color: #fff; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 16px; padding: 5px 12px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 5px; }
-    .burley-btn.active { background: var(--burley-green); color: #062b16; border-color: var(--burley-green); }
     .burley-box { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.14); display: none; }
     .burley-box.show { display: block; }
     .burley-title { font-size: 0.74rem; color: var(--burley-green); font-weight: 600; text-transform: uppercase; margin-bottom: 5px; }
-    .burley-item { font-size: 0.8rem; margin-bottom: 4px; display: flex; justify-content: space-between; background: rgba(0, 230, 118, 0.12); padding: 5px 8px; border-radius: 4px; border: 1px solid rgba(0, 230, 118, 0.3); }
+    .burley-item { font-size: 0.8rem; margin-bottom: 4px; display: flex; justify-content: space-between; background: rgba(0, 230, 118, 0.12); border: 1px solid rgba(0, 230, 118, 0.3); padding: 5px 8px; border-radius: 4px; cursor: pointer; }
 
     /* TAB 2: ROUTING & TIMELINE */
     .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
     .input-group label { display: block; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; }
-    .input-group input, .input-group select { width: 100%; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; outline: none; }
-    #map { width: 100%; height: 200px; border-radius: 6px; margin: 10px 0; background: #0b223d; z-index: 1; }
-    .route-results { display: flex; justify-content: space-between; background: rgba(255,255,255,0.08); padding: 8px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; }
-    .spots-list { max-height: 90px; overflow-y: auto; background: rgba(0,0,0,0.1); padding: 6px; border-radius: 4px; margin-bottom: 8px; font-size: 0.8rem; }
+    .input-group input, .input-group select { width: 100%; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 6px 8px; border-radius: 4px; font-size: 0.82rem; outline: none; }
+    #map { width: 100%; height: 220px; border-radius: 6px; margin: 8px 0; background: #0b223d; z-index: 1; }
+    .route-results { display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center; background: rgba(255,255,255,0.08); padding: 8px 6px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; gap: 4px; }
+    .spots-list { max-height: 100px; overflow-y: auto; background: rgba(0,0,0,0.15); padding: 6px 8px; border-radius: 4px; margin-bottom: 8px; font-size: 0.8rem; }
     .spots-list label { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: pointer; }
-    .timeline-box { margin-top: 10px; background: rgba(0, 0, 0, 0.25); padding: 12px; border-radius: 6px; border-left: 3px solid #ffeb3b; }
+    .timeline-box { margin-top: 8px; background: rgba(0, 0, 0, 0.25); padding: 10px 12px; border-radius: 6px; border-left: 3px solid var(--accent-yellow); }
     .tl-row { display: flex; align-items: flex-start; margin-bottom: 10px; }
     .tl-row:last-child { margin-bottom: 0; }
-    .tl-time { width: 65px; font-weight: 600; font-size: 0.8rem; color: #90caf9; flex-shrink: 0; }
-    .tl-desc { font-size: 0.75rem; color: #fff; padding-left: 12px; border-left: 1px solid rgba(255, 255, 255, 0.2); line-height: 1.3; }
-    .tl-desc strong { color: #fff; font-size: 0.8rem; letter-spacing: 0.2px; }
+    .tl-time { width: 68px; font-weight: 600; font-size: 0.8rem; color: #90caf9; flex-shrink: 0; }
+    .tl-desc { font-size: 0.75rem; color: #fff; padding-left: 10px; border-left: 1px solid rgba(255, 255, 255, 0.2); line-height: 1.3; }
+    .tl-desc strong { color: #fff; font-size: 0.8rem; }
 
-    /* TAB 3: CHECKLIST */
-    .checklist-group { margin-bottom: 15px; }
-    .checklist-group h4 { font-size: 0.8rem; color: #fff; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px; }
-    .check-item { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; margin-bottom: 6px; }
-    .check-item input[type="checkbox"] { width: 16px; height: 16px; }
+    /* TAB 3: VESSEL & SPOTS */
+    #map-creator { width: 100%; height: 195px; border-radius: 6px; margin: 8px 0; background: #0b223d; z-index: 1; }
+    .saved-spot-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.06); padding: 6px 8px; border-radius: 4px; margin-bottom: 4px; font-size: 0.8rem; }
+    .btn-action { background: var(--burley-green); color: #062b16; border: none; padding: 6px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 0.8rem; }
+    .del-btn { background: #e53935; color: #fff; border: none; padding: 3px 7px; border-radius: 3px; cursor: pointer; font-size: 0.7rem; }
 
-    /* Bottom Nav Bar */
-    .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: #0c438f; display: flex; justify-content: space-around; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(255,255,255,0.1); z-index: 1000; }
-    .nav-btn { display: flex; flex-direction: column; align-items: center; color: rgba(255,255,255,0.6); text-decoration: none; font-size: 0.7rem; gap: 4px; width: 33%; cursor: pointer; border: none; background: none; }
+    /* TAB 4: CHECKLIST */
+    .checklist-group { margin-bottom: 14px; }
+    .checklist-group h4 { font-size: 0.78rem; color: #90caf9; text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px; }
+    .check-item { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; margin-bottom: 7px; background: rgba(255,255,255,0.05); padding: 6px 8px; border-radius: 4px; }
+    .check-item label { display: flex; align-items: center; gap: 10px; cursor: pointer; flex-grow: 1; }
+    .check-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--burley-green); }
+
+    /* Bottom Navigation */
+    .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: #0a3d82; display: flex; justify-content: space-around; padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(255,255,255,0.15); z-index: 1000; }
+    .nav-btn { display: flex; flex-direction: column; align-items: center; color: rgba(255,255,255,0.6); font-size: 0.68rem; gap: 3px; width: 25%; cursor: pointer; border: none; background: none; }
     .nav-btn.active { color: #fff; font-weight: 600; }
-    .nav-icon { font-size: 1.4rem; }
+    .nav-icon { font-size: 1.25rem; }
   </style>
 </head>
 <body>
   <div class="app-shell">
     <header>
-      <h1>Fish Activity</h1>
+      <h1 id="boat-title-header">Fish Activity</h1>
+      <button class="cal-trigger" id="cal-btn">📅 Pick Date</button>
+      <input type="date" id="date-picker" />
     </header>
+
     <div class="date-strip" id="date-strip"></div>
 
-    <!-- TAB 1: SOLUNAR -->
+    <!-- TAB 1: SOLUNAR & TIDES -->
     <div id="tab-solunar" class="tab-content active">
       <div class="controls-row">
-        <button class="burley-btn" id="burley-btn">🪣 Burley</button>
+        <button class="burley-btn" id="burley-btn">🪣 Burley Times</button>
         <select class="loc-select" id="loc-select-main">
           <option value="mana">Mana Island</option>
           <option value="harbour">Wellington Harbour</option>
           <option value="south">South Coast</option>
         </select>
       </div>
+
       <div class="score-section">
         <div class="gauge-box">
           <svg class="gauge-svg" viewBox="0 0 120 120">
             <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="8" stroke-dasharray="2 3.02" />
             <circle id="gauge-ticks" cx="60" cy="60" r="48" fill="none" stroke="#fff" stroke-width="8" stroke-dasharray="2 3.02" stroke-dashoffset="301.6" />
           </svg>
-          <div class="score-val" id="score-val">--</div>
-          <div class="stars-val" id="stars-val"></div>
+          <div class="score-val" id="score-val">49</div>
+          <div class="stars-val" id="stars-val">★★</div>
         </div>
-        <div class="label-val" id="label-val">--</div>
+        <div class="label-val" id="label-val">Average fish activity</div>
       </div>
+
       <div class="chart-container" id="chart-area">
-        <span class="band-label band-high">HIGH</span><span class="band-label band-med">MEDIUM</span><span class="band-label band-low">LOW</span>
+        <span class="band-label band-high">HIGH</span>
+        <span class="band-label band-med">MEDIUM</span>
+        <span class="band-label band-low">LOW</span>
         <svg id="curve-svg" viewBox="0 0 440 214" preserveAspectRatio="none"></svg>
       </div>
+
       <div class="times-grid">
-        <div class="times-col"><h3>Major Times</h3><div id="major-list"></div></div>
-        <div class="times-col"><h3>Minor Times</h3><div id="minor-list"></div></div>
+        <div class="times-col">
+          <h3>Major Times</h3>
+          <div id="major-list"></div>
+        </div>
+        <div class="times-col">
+          <h3>Minor Times</h3>
+          <div id="minor-list"></div>
+        </div>
       </div>
+
       <div class="tide-panel">
-        <div class="tide-header"><span id="tide-area-title">Area Tides</span><span class="tide-diff-badge" id="tide-diff-badge"></span></div>
+        <div class="tide-header">
+          <span id="tide-area-title">Area Tides</span>
+          <span class="tide-diff-badge" id="tide-diff-badge"></span>
+        </div>
         <div class="tide-list" id="tide-list"></div>
         <div class="burley-box" id="burley-box">
-          <div class="burley-title">🪣 Best Burley Flow Windows</div>
+          <div class="burley-title">🪣 Best Burley Flow Windows (Tap to highlight)</div>
           <div id="burley-list"></div>
         </div>
       </div>
     </div>
 
-    <!-- TAB 2: ROUTING & TIMELINE -->
+    <!-- TAB 2: TRIP PLANNER (WATER ROUTING & TIMELINE) -->
     <div id="tab-route" class="tab-content">
       <div class="module-panel">
-        <div class="module-header">🛥️ Boat Profile & Route</div>
+        <div class="module-header">
+          <span>🛥️ Maritime Route & Fuel</span>
+          <span style="font-size:0.68rem; color:#00e676; text-transform:none;">Auto-Water Channel</span>
+        </div>
+
         <div class="input-grid">
-          <div class="input-group"><label>Cruise Speed (Knots)</label><input type="number" id="boat-speed" value="20" onchange="runRoutingAndTimeline()"></div>
-          <div class="input-group"><label>Fuel Burn (L/hr)</label><input type="number" id="boat-burn" value="25" onchange="runRoutingAndTimeline()"></div>
+          <div class="input-group">
+            <label>Launch Ramp (Start)</label>
+            <select id="ramp-start" onchange="syncEndRamp(); runRoutingAndTimeline()">
+              <option value="ngatitoa">Ngatitoa Domain (Paremata)</option>
+              <option value="evans">Evans Bay Marina</option>
+              <option value="seatoun">Seatoun / Karaka Bays</option>
+              <option value="seaview">Seaview Marina (Lowry Bay)</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Retrieval Ramp (End)</label>
+            <select id="ramp-end" onchange="runRoutingAndTimeline()">
+              <option value="ngatitoa">Ngatitoa Domain (Paremata)</option>
+              <option value="evans">Evans Bay Marina</option>
+              <option value="seatoun">Seatoun / Karaka Bays</option>
+              <option value="seaview">Seaview Marina (Lowry Bay)</option>
+            </select>
+          </div>
         </div>
+
         <div class="input-group">
-          <label>Launch Ramp</label>
-          <select id="ramp-select" onchange="runRoutingAndTimeline()">
-            <option value="-41.0910,174.7830">Mana Island / Ngatitoa</option>
-            <option value="-41.2980,174.7930">Evans Bay Marina</option>
-            <option value="-41.3050,174.8290">Seatoun Boat Ramp</option>
-          </select>
-        </div>
-        <div class="input-group" style="margin-top: 10px;">
-          <label>Select Target Spots</label>
+          <label>Select Target Spots (Visited in order; tap map to add temporary waypoint)</label>
           <div class="spots-list" id="spots-checkboxes"></div>
         </div>
+
         <div id="map"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <span style="font-size:0.68rem; color:var(--text-muted);">Routes automatically steer clear of headlands</span>
+          <button onclick="clearTempWaypoints()" style="background:none; border:1px solid rgba(255,255,255,0.3); color:#fff; border-radius:4px; padding:2px 6px; font-size:0.68rem; cursor:pointer;">Reset Custom Turns</button>
+        </div>
+
         <div class="route-results">
-          <span id="route-dist">Dist: 0.0 nm</span><span id="route-time">Time: 0h 0m</span><span id="route-fuel">Fuel: 0 L</span>
+          <span id="route-dist">Dist: 0.0 nm</span>
+          <span id="route-time">Steam: 0h 0m</span>
+          <span id="route-fuel">Fuel: 0 L</span>
         </div>
       </div>
+
       <div class="module-panel">
-        <div class="module-header">⏱️ Mission Timeline</div>
+        <div class="module-header">⏱️ Reverse-Engineered Timeline</div>
         <div class="input-grid">
-          <div class="input-group"><label>Prep Buffer (Mins)</label><input type="number" id="prep-buffer" value="90" step="10" onchange="runRoutingAndTimeline()"></div>
           <div class="input-group">
-            <label>Target Phase</label>
+            <label>Prep & Drive to Ramp (Mins)</label>
+            <input type="number" id="prep-buffer" value="75" step="5" onchange="runRoutingAndTimeline()">
+          </div>
+          <div class="input-group">
+            <label>Target Activity Window</label>
             <select id="target-phase" onchange="runRoutingAndTimeline()">
               <option value="major1">Major Window 1</option>
               <option value="major2">Major Window 2</option>
               <option value="minor1">Minor Window 1</option>
+              <option value="minor2">Minor Window 2</option>
             </select>
           </div>
         </div>
@@ -185,29 +298,91 @@
       </div>
     </div>
 
-    <!-- TAB 3: GEAR CHECKLIST -->
+    <!-- TAB 3: VESSEL PROFILE & SPOT CREATOR -->
+    <div id="tab-vessel" class="tab-content">
+      <div class="module-panel">
+        <div class="module-header">🚤 Vessel Profile</div>
+        <div class="input-group" style="margin-bottom:8px;">
+          <label>Vessel Name</label>
+          <input type="text" id="boat-name" value="Tewaiwhare" onchange="saveProfile()">
+        </div>
+        <div class="input-grid">
+          <div class="input-group">
+            <label>Cruise Speed (Knots)</label>
+            <input type="number" id="boat-speed" value="20" min="4" max="55" onchange="saveProfile(); runRoutingAndTimeline()">
+          </div>
+          <div class="input-group">
+            <label>Cruise Burn (L/hr)</label>
+            <input type="number" id="boat-burn" value="24" min="2" max="120" onchange="saveProfile(); runRoutingAndTimeline()">
+          </div>
+        </div>
+        <div class="input-grid">
+          <div class="input-group">
+            <label>Tank Capacity (Liters)</label>
+            <input type="number" id="boat-tank" value="110" min="10" max="1000" onchange="saveProfile(); runRoutingAndTimeline()">
+          </div>
+          <div class="input-group">
+            <label>Safety Reserve (%)</label>
+            <input type="number" id="boat-reserve" value="30" min="10" max="50" onchange="saveProfile(); runRoutingAndTimeline()">
+          </div>
+        </div>
+      </div>
+
+      <div class="module-panel">
+        <div class="module-header">📍 Spot Creator & Waypoint Library</div>
+        <div class="input-group">
+          <label>Tap map to drop a pin or type coordinates:</label>
+          <input type="text" id="new-spot-name" placeholder="Spot Name (e.g., Mana Dropoff)" style="margin: 4px 0 6px;">
+          <div style="display:flex; gap:6px;">
+            <input type="text" id="new-spot-coords" placeholder="-41.0850, 174.7720" style="flex-grow:1;">
+            <button class="btn-action" onclick="saveCustomSpot()">+ Save Spot</button>
+          </div>
+        </div>
+        <div id="map-creator"></div>
+        <div style="margin-top: 8px;">
+          <label style="font-size:0.72rem; color:var(--text-muted);">Saved Custom Marks:</label>
+          <div id="custom-spots-list" style="max-height: 120px; overflow-y: auto; margin-top: 4px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: GEAR & PRE-MISSION CHECKLIST -->
     <div id="tab-gear" class="tab-content">
       <div class="module-panel">
-        <div class="module-header">🎣 Loadout & Gear Check</div>
-        <div class="input-group" style="margin-bottom: 15px;">
-          <label>Target Species</label>
+        <div class="module-header">
+          <span>🎣 Pre-Mission Gear Checklist</span>
+          <button onclick="resetChecks()" style="background:none; border:1px solid rgba(255,255,255,0.3); color:#fff; border-radius:4px; padding:2px 7px; font-size:0.68rem; cursor:pointer;">Uncheck All</button>
+        </div>
+
+        <div class="input-group" style="margin-bottom: 12px;">
+          <label>Target Species Loadout</label>
           <select id="species-select" onchange="renderChecklist()">
-            <option value="general">General Bottom Fishing</option>
-            <option value="kingfish">Kingfish (Jig/Livebait)</option>
-            <option value="snapper">Snapper (Strayline/Softbait)</option>
+            <option value="kingfish">Kingfish (Heavy Jig / Livebait)</option>
+            <option value="snapper">Snapper & Tarakihi (Strayline / Ledger)</option>
+            <option value="groper">Hāpuku / Bluenose (Deep Trench Electric/Manual)</option>
+            <option value="pelagic">Kahawai & Tuna (Trolling / Lures)</option>
           </select>
         </div>
+
+        <div style="display:flex; gap:6px; margin-bottom:12px;">
+          <input type="text" id="custom-gear-input" placeholder="Add custom item (e.g., Salt Ice, Gimbal)..." style="flex-grow:1; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.3); color:#fff; padding:6px 8px; border-radius:4px; font-size:0.8rem;">
+          <button class="btn-action" onclick="addCustomGear()">+ Add</button>
+        </div>
+
         <div id="checklist-render"></div>
       </div>
     </div>
 
-    <!-- Bottom Navigation -->
+    <!-- Bottom Nav -->
     <div class="bottom-nav">
       <button class="nav-btn active" onclick="switchTab('solunar', this)">
         <span class="nav-icon">🌙</span><span>Solunar</span>
       </button>
       <button class="nav-btn" onclick="switchTab('route', this)">
         <span class="nav-icon">🗺️</span><span>Trip Plan</span>
+      </button>
+      <button class="nav-btn" onclick="switchTab('vessel', this)">
+        <span class="nav-icon">🚤</span><span>Vessel & Spots</span>
       </button>
       <button class="nav-btn" onclick="switchTab('gear', this)">
         <span class="nav-icon">📋</span><span>Gear</span>
@@ -216,95 +391,273 @@
   </div>
 
   <script>
-    // Tab Logic
-    function switchTab(tabId, btnElement) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-      document.getElementById('tab-' + tabId).classList.add('active');
-      document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
-      btnElement.classList.add('active');
-      if (tabId === 'route' && map) setTimeout(() => map.invalidateSize(), 200); // Fix map render issue in hidden tab
-    }
-
-    // Solunar Engine & Map Setup
+    // =========================================================================
+    // 1. VERIFIED WELLINGTON MARITIME DATABASE (RAMPS, SEA LANES, SPOTS)
+    // =========================================================================
     const LOCATIONS = {
-      mana: { name: 'Mana Island', lat: -41.0910, lon: 174.7830, lunitidalHighHrs: 9.15, diffText: 'Tide: +4h 15m vs Harbour', currentFactor: 1.15 },
-      harbour: { name: 'Wellington Harbour', lat: -41.2866, lon: 174.8300, lunitidalHighHrs: 4.90, diffText: 'Tide: Ref Port', currentFactor: 1.0 },
-      south: { name: 'South Coast', lat: -41.3480, lon: 174.7700, lunitidalHighHrs: 4.15, diffText: 'Tide: -45m vs Harbour', currentFactor: 1.10 }
+      mana: { name: 'Mana Island', lat: -41.0880, lon: 174.7810, lunitidalHighHrs: 9.15, diffText: 'Tide: +4h 15m vs Harbour (Strong Flow)', currentFactor: 1.15 },
+      harbour: { name: 'Wellington Harbour', lat: -41.2866, lon: 174.8300, lunitidalHighHrs: 4.90, diffText: 'Tide: Ref Port (Moderate Flow)', currentFactor: 1.00 },
+      south: { name: 'South Coast', lat: -41.3520, lon: 174.7750, lunitidalHighHrs: 4.15, diffText: 'Tide: -45m vs Harbour (Strait Rip)', currentFactor: 1.10 }
     };
-    const savedSpots = [
-      { name: "Mana Trench", lat: -41.0800, lon: 174.7600 }, { name: "Hunters Bank", lat: -41.0400, lon: 174.8100 },
-      { name: "Makara Foul", lat: -41.2250, lon: 174.6850 }, { name: "Barrett Reef", lat: -41.3280, lon: 174.8350 }, { name: "Pencarrow Head", lat: -41.3650, lon: 174.8580 }
+
+    // Verified Trailer Boat Ramps (Mainland coordinates)
+    const RAMPS = {
+      ngatitoa: { name: 'Ngatitoa Domain (Paremata)', lat: -41.1008, lon: 174.8625, zone: 'west' },
+      evans:    { name: 'Evans Bay Marina', lat: -41.3039, lon: 174.8038, zone: 'inner_harbour' },
+      seatoun:  { name: 'Seatoun / Karaka Bays', lat: -41.3185, lon: 174.8345, zone: 'outer_harbour' },
+      seaview:  { name: 'Seaview Marina (Lowry Bay)', lat: -41.2582, lon: 174.9042, zone: 'inner_harbour' }
+    };
+
+    // Safe Water Navigation Gates (Prevents cutting across Miramar, Titahi Bay, or Terawhiti)
+    const WATER_GATES = {
+      PORIRUA_ENTRANCE: [-41.0900, 174.8500],
+      TITAHI_CLEAR:     [-41.0820, 174.8220],
+      PT_HALSWELL:      [-41.2780, 174.8260],
+      FALCON_SHOAL:     [-41.3140, 174.8410],
+      PENCARROW_GATE:   [-41.3580, 174.8420],
+      SOUTH_COAST_LANE: [-41.3680, 174.7500],
+      KARORI_ROCK_GATE: [-41.3520, 174.6420],
+      CAPE_TERAWHITI:   [-41.2850, 174.5950],
+      MAKARA_OFFSHORE:  [-41.2150, 174.6800]
+    };
+
+    const defaultSpots = [
+      { name: "Mana Bridge / Pascoe Bank", lat: -41.0950, lon: 174.8050, zone: 'west' },
+      { name: "Mana Trench", lat: -41.0780, lon: 174.7450, zone: 'west' },
+      { name: "Hunters Bank", lat: -41.0350, lon: 174.7950, zone: 'west' },
+      { name: "Makara Foul", lat: -41.2150, lon: 174.6850, zone: 'west_south' },
+      { name: "Point Gordon / Ward Island", lat: -41.2950, lon: 174.8550, zone: 'outer_harbour' },
+      { name: "Barrett Reef", lat: -41.3390, lon: 174.8380, zone: 'outer_harbour' },
+      { name: "Pencarrow Head", lat: -41.3660, lon: 174.8480, zone: 'south' },
+      { name: "Sinclair Head / Red Rocks", lat: -41.3720, lon: 174.7150, zone: 'south' }
     ];
 
-    let currentLocKey = 'mana';
-    let selectedDate = new Date(); selectedDate.setHours(12, 0, 0, 0);
-    let showBurleyMode = false;
-    let currentData = null;
-    let map, polyline, markers = [];
+    let customSpots = JSON.parse(localStorage.getItem('custom_spots_v2') || '[]');
+    let allSpots = [...defaultSpots, ...customSpots];
+    let tempWaypoints = [];
 
-    // Astronomy Engine Logic (Stripped for brevity, relies on full integration from prior steps)
-    const RAD = Math.PI / 180, DEG = 180 / Math.PI;
+    let currentLocKey = 'mana';
+    let selectedDate = new Date();
+    selectedDate.setHours(12, 0, 0, 0);
+
+    let activeWindow = null;
+    let showBurleyMode = false;
+    let scrubHour = null;
+    let currentData = null;
+
+    let map, polyline, markers = [];
+    let creatorMap, creatorMarker, pickedLatLng = null;
+
+    // =========================================================================
+    // 2. ZERO-DEPENDENCY ASTRONOMICAL & TIDAL ENGINE (100% OFFLINE)
+    // =========================================================================
+    const RAD = Math.PI / 180;
+    const DEG = 180 / Math.PI;
+
+    function toJulian(date) {
+      return date.getTime() / 86400000 + 2440587.5;
+    }
+
     function getMoonEphemeris(date) {
-      const d = date.getTime() / 86400000 + 2440587.5 - 2451545.0;
-      const L_sun = (280.4665 + 0.98564736 * d) % 360;
+      const jd = toJulian(date);
+      const d = jd - 2451545.0;
+
       const M_sun = (357.5291 + 0.98560028 * d) % 360;
-      const lambda_sun = L_sun + 1.915 * Math.sin(M_sun * RAD);
+      const L_sun = (280.4665 + 0.98564736 * d) % 360;
+      const lambda_sun = L_sun + 1.915 * Math.sin(M_sun * RAD) + 0.020 * Math.sin(2 * M_sun * RAD);
+
       const L_moon = (218.3165 + 13.17639648 * d) % 360;
       const M_moon = (134.9634 + 13.06499295 * d) % 360;
+      const F_moon = (93.2721 + 13.22935024 * d) % 360;
       const D_elong = (297.8502 + 12.19074912 * d) % 360;
-      const lon = L_moon + 6.289 * Math.sin(M_moon * RAD) + 1.274 * Math.sin((2 * D_elong - M_moon) * RAD);
-      return { phaseAngle: ((lon - lambda_sun) % 360 + 360) % 360 };
+
+      const lon = L_moon
+        + 6.289 * Math.sin(M_moon * RAD)
+        + 1.274 * Math.sin((2 * D_elong - M_moon) * RAD)
+        + 0.658 * Math.sin(2 * D_elong * RAD)
+        + 0.214 * Math.sin(2 * M_moon * RAD)
+        - 0.186 * Math.sin(M_sun * RAD);
+
+      const lat = 5.128 * Math.sin(F_moon * RAD) + 0.280 * Math.sin((M_moon + F_moon) * RAD);
+      const eps = 23.4393 * RAD;
+      const lonR = lon * RAD, latR = lat * RAD;
+
+      const ra = Math.atan2(Math.sin(lonR) * Math.cos(eps) - Math.tan(latR) * Math.sin(eps), Math.cos(lonR)) * DEG;
+      const dec = Math.asin(Math.sin(latR) * Math.cos(eps) + Math.cos(latR) * Math.sin(eps) * Math.sin(lonR)) * DEG;
+      const phaseAngle = ((lon - lambda_sun) % 360 + 360) % 360;
+      const gmst = ((280.46061837 + 360.98564736629 * d) % 360 + 360) % 360;
+
+      return { ra: (ra + 360) % 360, dec, phaseAngle, gmst };
     }
 
-    function calculateSolunar(date, loc) {
-      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      const dayEnd = new Date(dayStart.getTime() + 86400000);
-      const phaseRad = getMoonEphemeris(new Date(dayStart.getTime() + 43200000)).phaseAngle * RAD;
-      const score = Math.max(5, Math.min(100, Math.round(55 - 42 * Math.cos(2 * phaseRad))));
-      
-      const observer = new Astronomy.Observer(loc.lat, loc.lon, 0);
-      const searchStart = new Date(dayStart.getTime() - 8 * 3600000), searchEnd = new Date(dayEnd.getTime() + 8 * 3600000);
-      const majors = [], minors = [];
-      [0, 12].forEach(ha => { let t = searchStart; while (t < searchEnd) { const ev = Astronomy.SearchHourAngle(Astronomy.Body.Moon, observer, ha, t); if(!ev || ev.time.date >= searchEnd) break; majors.push(ev.time.date); t = new Date(ev.time.date.getTime() + 16 * 3600000); }});
-      [+1, -1].forEach(dir => { let t = searchStart; while (t < searchEnd) { const ev = Astronomy.SearchRiseSet(Astronomy.Body.Moon, observer, dir, t, 1); if(!ev || ev.date >= searchEnd) break; minors.push(ev.date); t = new Date(ev.date.getTime() + 16 * 3600000); }});
-      majors.sort((a,b)=>a-b); minors.sort((a,b)=>a-b);
+    function calculateSolunarAndTides(date, loc) {
+      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0);
+      const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1, 0, 0, 0);
+      const midDay = new Date(dayStart.getTime() + 12 * 3600000);
 
-      const tides = majors.map(t => new Date(t.getTime() + loc.lunitidalHighHrs * 3600000));
-      const dayTides = []; tides.forEach(ht => {
-        dayTides.push({time: new Date(ht.getTime() - 6.21 * 3600000), type: 'LOW'});
-        dayTides.push({time: ht, type: 'HIGH'});
-      }); dayTides.sort((a,b)=>a.time-b.time);
+      const ephemNoon = getMoonEphemeris(midDay);
+      const phaseRad = ephemNoon.phaseAngle * RAD;
+      const score = Math.max(5, Math.min(100, Math.round(55 - 42 * Math.cos(2 * phaseRad))));
+
+      const majors = [];
+      const minors = [];
+      const stepMins = 5;
+      let prevHA = null, prevAlt = null;
+
+      for (let m = -360; m <= 1800; m += stepMins) {
+        const t = new Date(dayStart.getTime() + m * 60000);
+        const e = getMoonEphemeris(t);
+        const lst = (e.gmst + loc.lon + 360) % 360;
+        const ha = (lst - e.ra + 540) % 360 - 180;
+
+        const alt = Math.asin(
+          Math.sin(loc.lat * RAD) * Math.sin(e.dec * RAD) +
+          Math.cos(loc.lat * RAD) * Math.cos(e.dec * RAD) * Math.cos(ha * RAD)
+        ) * DEG;
+
+        if (prevHA !== null) {
+          if (prevHA < 0 && ha >= 0 && Math.abs(ha - prevHA) < 30) {
+            const frac = -prevHA / (ha - prevHA);
+            majors.push(new Date(t.getTime() - (1 - frac) * stepMins * 60000));
+          }
+          if (prevHA > 90 && ha < -90) {
+            const diff = (180 - prevHA) + (ha + 180);
+            const frac = (180 - prevHA) / diff;
+            majors.push(new Date(t.getTime() - (1 - frac) * stepMins * 60000));
+          }
+          const h0 = -0.5;
+          if ((prevAlt < h0 && alt >= h0) || (prevAlt >= h0 && alt < h0)) {
+            const frac = (h0 - prevAlt) / (alt - prevAlt);
+            minors.push(new Date(t.getTime() - (1 - frac) * stepMins * 60000));
+          }
+        }
+        prevHA = ha;
+        prevAlt = alt;
+      }
+
+      const tides = [];
+      majors.forEach(transitTime => {
+        const highTime = new Date(transitTime.getTime() + loc.lunitidalHighHrs * 3600000);
+        tides.push({ time: new Date(highTime.getTime() - 6.21 * 3600000), type: 'LOW' });
+        tides.push({ time: highTime, type: 'HIGH' });
+        tides.push({ time: new Date(highTime.getTime() + 6.21 * 3600000), type: 'LOW' });
+      });
+
+      tides.sort((a, b) => a.time - b.time);
+      const uniqueTides = [];
+      tides.forEach(td => {
+        if (!uniqueTides.some(u => Math.abs(u.time - td.time) < 2.5 * 3600000)) uniqueTides.push(td);
+      });
 
       const burleyWindows = [];
-      for(let i=0; i<dayTides.length-1; i++){
-        const bStart = new Date(dayTides[i].time.getTime() + 3600000);
-        const bEnd = new Date(dayTides[i+1].time.getTime() - 3600000);
-        if(bEnd > dayStart && bStart < dayEnd) burleyWindows.push({start: bStart, end: bEnd, flowDir: dayTides[i].type === 'LOW' ? 'Incoming Flood' : 'Outgoing Ebb'});
+      for (let i = 0; i < uniqueTides.length - 1; i++) {
+        const t1 = uniqueTides[i], t2 = uniqueTides[i + 1];
+        const bStart = new Date(t1.time.getTime() + 3600000);
+        const bEnd = new Date(t2.time.getTime() - 3600000);
+        if (bEnd > dayStart && bStart < dayEnd && bEnd > bStart) {
+          burleyWindows.push({ start: bStart, end: bEnd, flowDir: t1.type === 'LOW' ? 'Incoming Flood' : 'Outgoing Ebb' });
+        }
       }
-      return { score, majors, minors, dayTides: dayTides.filter(t=>t.time>=dayStart && t.time<dayEnd), burleyWindows, dayStart, dayEnd, loc };
+
+      const dayTides = uniqueTides.filter(t => t.time >= dayStart && t.time < dayEnd);
+      return { score, majors, minors, dayTides, burleyWindows, dayStart, dayEnd, loc };
     }
 
-    function formatClock(d) { let h = d.getHours(), m = d.getMinutes(); return `${h%12||12}:${m<10?'0':''}${m} ${h>=12?'pm':'am'}`; }
-    
+    function formatClock(date) {
+      let h = date.getHours();
+      const m = date.getMinutes();
+      const ampm = h >= 12 ? 'pm' : 'am';
+      h = h % 12 || 12;
+      return `${h}:${m < 10 ? '0' : ''}${m} ${ampm}`;
+    }
+
+    function evaluateActivity(hr, data) {
+      const tMs = data.dayStart.getTime() + hr * 3600000;
+      const base = 18 + (data.score / 100) * 32;
+      const majorAmp = 34 + (data.score / 100) * 16;
+      const minorAmp = 20 + (data.score / 100) * 10;
+      let v = base;
+
+      data.majors.forEach(m => {
+        const dt = (tMs - m.getTime()) / 3600000;
+        if (Math.abs(dt) <= 3.1) v += majorAmp * Math.pow(Math.max(0, Math.cos((Math.PI * dt) / 3.1)), 1.25);
+      });
+      data.minors.forEach(m => {
+        const dt = (tMs - m.getTime()) / 3600000;
+        if (Math.abs(dt) <= 2.1) v += minorAmp * Math.pow(Math.max(0, Math.cos((Math.PI * dt) / 2.1)), 1.35);
+      });
+      data.burleyWindows.forEach(bw => {
+        const midFlow = (bw.start.getTime() + bw.end.getTime()) / 2;
+        const dtFlow = (tMs - midFlow) / 3600000;
+        if (Math.abs(dtFlow) <= 2.0) v += 4.5 * data.loc.currentFactor * Math.cos((Math.PI * dtFlow) / 4.0);
+      });
+
+      return Math.max(6, Math.min(95, v));
+    }
+
+    // =========================================================================
+    // 3. SOLUNAR UI & INTERACTIVE CHART
+    // =========================================================================
+    function buildWindowCard(centerDate, halfWidthHr, dayStart, dayEnd, id) {
+      const s = new Date(centerDate.getTime() - halfWidthHr * 3600000);
+      const e = new Date(centerDate.getTime() + halfWidthHr * 3600000);
+      const sHr = (s.getTime() - dayStart.getTime()) / 3600000;
+      const eHr = (e.getTime() - dayStart.getTime()) / 3600000;
+
+      let sub = '';
+      if (s < dayStart) sub = '<span class="day-offset">previous day</span>';
+      else if (e >= dayEnd) sub = '<span class="day-offset">next day</span>';
+
+      const isSelected = activeWindow && activeWindow.id === id;
+      return `
+        <div class="time-card ${isSelected ? 'active-window' : ''}" onclick="selectWindow('${id}', ${sHr}, ${eHr}, 'rgba(255,255,255,0.42)')">
+          <div class="time-card-text">${formatClock(s)} – ${formatClock(e)}${sub}</div>
+        </div>
+      `;
+    }
+
+    window.selectWindow = function(id, sHr, eHr, color) {
+      if (activeWindow && activeWindow.id === id) activeWindow = null;
+      else activeWindow = { id, sHr, eHr, color };
+      renderSolunar();
+    };
+
     function renderSolunar() {
       const loc = LOCATIONS[currentLocKey];
-      currentData = calculateSolunar(selectedDate, loc);
-      document.getElementById('score-val').textContent = currentData.score;
-      document.getElementById('gauge-ticks').style.strokeDashoffset = (301.59 * (1 - currentData.score/100)).toFixed(2);
-      
-      const majs = currentData.majors.filter(t=>t>=currentData.dayStart && t<currentData.dayEnd);
-      document.getElementById('major-list').innerHTML = majs.map(t=>`<div class="time-card">${formatClock(new Date(t.getTime()-4500000))} – ${formatClock(new Date(t.getTime()+4500000))}</div>`).join('');
-      const mins = currentData.minors.filter(t=>t>=currentData.dayStart && t<currentData.dayEnd);
-      document.getElementById('minor-list').innerHTML = mins.map(t=>`<div class="time-card">${formatClock(new Date(t.getTime()-2700000))} – ${formatClock(new Date(t.getTime()+2700000))}</div>`).join('');
-      
+      const data = calculateSolunarAndTides(selectedDate, loc);
+      currentData = data;
+      const score = data.score;
+
+      document.getElementById('score-val').textContent = score;
+      document.getElementById('stars-val').textContent = score >= 90 ? '★★★' : (score >= 40 ? '★★' : (score >= 20 ? '★' : ''));
+
+      let label = 'Very high fish activity';
+      if (score < 20) label = 'Very low fish activity';
+      else if (score < 40) label = 'Low fish activity';
+      else if (score < 70) label = 'Average fish activity';
+      else if (score < 85) label = 'High fish activity';
+      document.getElementById('label-val').textContent = label;
+
+      document.getElementById('gauge-ticks').style.strokeDashoffset = (301.59 * (1 - score / 100)).toFixed(2);
+
+      const dayMajors = data.majors.filter(t => t >= data.dayStart && t < data.dayEnd);
+      const dayMinors = data.minors.filter(t => t >= data.dayStart && t < data.dayEnd);
+
+      document.getElementById('major-list').innerHTML = dayMajors.map((t, i) => buildWindowCard(t, 1.25, data.dayStart, data.dayEnd, 'maj_' + i)).join('') || '<div class="time-card">–</div>';
+      document.getElementById('minor-list').innerHTML = dayMinors.map((t, i) => buildWindowCard(t, 0.75, data.dayStart, data.dayEnd, 'min_' + i)).join('') || '<div class="time-card">–</div>';
+
       document.getElementById('tide-area-title').textContent = `${loc.name} Tides`;
       document.getElementById('tide-diff-badge').textContent = loc.diffText;
-      document.getElementById('tide-list').innerHTML = currentData.dayTides.map(t => `<div class="tide-item"><span class="tide-type">${t.type}</span><span>${formatClock(t.time)}</span></div>`).join('');
-      
-      document.getElementById('burley-box').className = `burley-box ${showBurleyMode ? 'show' : ''}`;
-      document.getElementById('burley-list').innerHTML = currentData.burleyWindows.map(bw => `<div class="burley-item"><span><strong>${bw.flowDir}:</strong></span><span>${formatClock(bw.start)} – ${formatClock(bw.end)}</span></div>`).join('');
+      document.getElementById('tide-list').innerHTML = data.dayTides.map(t => `<div class="tide-item"><span class="tide-type">${t.type}</span><span>${formatClock(t.time)}</span></div>`).join('');
 
-      drawChart(currentData);
+      document.getElementById('burley-box').className = `burley-box ${showBurleyMode ? 'show' : ''}`;
+      document.getElementById('burley-list').innerHTML = data.burleyWindows.map((bw, idx) => {
+        const sHr = (bw.start.getTime() - data.dayStart.getTime()) / 3600000;
+        const eHr = (bw.end.getTime() - data.dayStart.getTime()) / 3600000;
+        return `<div class="burley-item" onclick="selectWindow('bur_${idx}', ${sHr}, ${eHr}, 'rgba(0, 230, 118, 0.45)')"><span><strong>${bw.flowDir}:</strong></span><span>${formatClock(bw.start)} – ${formatClock(bw.end)}</span></div>`;
+      }).join('');
+
+      drawChart(data);
       runRoutingAndTimeline();
     }
 
@@ -312,113 +665,554 @@
       const svg = document.getElementById('curve-svg');
       const W = 440, H = 214, leftPad = 62, rightPad = 12, topPad = 22, botPad = 34;
       const graphW = W - leftPad - rightPad, graphH = H - topPad - botPad;
-      let html = `<line x1="${leftPad}" y1="${topPad+graphH*0.52}" x2="${W-rightPad}" y2="${topPad+graphH*0.52}" stroke="var(--grid-line)" stroke-dasharray="3,3" />`;
-      
+
+      const yHigh = topPad + graphH * 0.18, yMed = topPad + graphH * 0.52, yLow = topPad + graphH * 0.86;
+      let svgHTML = `
+        <line x1="${leftPad}" y1="${yHigh}" x2="${W - rightPad}" y2="${yHigh}" stroke="var(--grid-line)" stroke-dasharray="3,3" />
+        <line x1="${leftPad}" y1="${yMed}" x2="${W - rightPad}" y2="${yMed}" stroke="var(--grid-line)" stroke-dasharray="3,3" />
+        <line x1="${leftPad}" y1="${yLow}" x2="${W - rightPad}" y2="${yLow}" stroke="var(--grid-line)" stroke-dasharray="3,3" />
+      `;
+
+      const hrs = [4, 8, 12, 16, 20];
+      const hrLabels = ['4:00 am', '8:00 am', '12:00 pm', '4:00 pm', '8:00 pm'];
+      hrs.forEach((h, i) => {
+        const x = leftPad + (h / 24) * graphW;
+        svgHTML += `
+          <line x1="${x}" y1="${topPad - 6}" x2="${x}" y2="${H - botPad}" stroke="var(--grid-line)" />
+          <text x="${x}" y="${H - 12}" fill="rgba(255,255,255,0.7)" font-size="10.5" text-anchor="middle">${hrLabels[i]}</text>
+        `;
+      });
+
       const pts = [];
-      for(let i=0; i<=60; i++) {
-        const hr = (i/60)*24;
-        const tMs = data.dayStart.getTime() + hr*3600000;
-        let v = 18 + (data.score/100)*32;
-        data.majors.forEach(m => { const dt = (tMs-m.getTime())/3600000; if(Math.abs(dt)<=3.1) v += (34+(data.score/100)*16)*Math.pow(Math.max(0, Math.cos(Math.PI*dt/3.1)), 1.25); });
-        data.minors.forEach(m => { const dt = (tMs-m.getTime())/3600000; if(Math.abs(dt)<=2.1) v += (20+(data.score/100)*10)*Math.pow(Math.max(0, Math.cos(Math.PI*dt/2.1)), 1.35); });
-        pts.push({x: leftPad + (hr/24)*graphW, y: topPad + graphH*(1 - Math.min(95, v)/100)});
+      const steps = 96;
+      for (let i = 0; i <= steps; i++) {
+        const hr = (i / steps) * 24;
+        const x = leftPad + (hr / 24) * graphW;
+        const act = evaluateActivity(hr, data);
+        const y = topPad + graphH * (1 - act / 100);
+        pts.push({ x, y, hr, act });
       }
-      
-      const lineD = pts.map((p,i)=>`${i===0?'M':'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-      const fillD = `${lineD} L ${(W-rightPad)},${H-botPad} L ${leftPad},${H-botPad} Z`;
-      html += `<path d="${fillD}" fill="rgba(255,255,255,0.15)" /><path d="${lineD}" fill="none" stroke="#fff" stroke-width="2" />`;
-      svg.innerHTML = html;
+
+      function buildColumnUnderCurve(sHr, eHr, fillColor) {
+        const x1 = Math.max(leftPad, leftPad + (sHr / 24) * graphW);
+        const x2 = Math.min(W - rightPad, leftPad + (eHr / 24) * graphW);
+        if (x2 <= x1) return '';
+        const subPts = pts.filter(p => p.x >= x1 && p.x <= x2);
+        const yStart = topPad + graphH * (1 - evaluateActivity(Math.max(0, sHr), data) / 100);
+        const yEnd = topPad + graphH * (1 - evaluateActivity(Math.min(24, eHr), data) / 100);
+
+        let colPath = `M ${x1.toFixed(1)},${H - botPad} L ${x1.toFixed(1)},${yStart.toFixed(1)} `;
+        subPts.forEach(p => { colPath += `L ${p.x.toFixed(1)},${p.y.toFixed(1)} `; });
+        colPath += `L ${x2.toFixed(1)},${yEnd.toFixed(1)} L ${x2.toFixed(1)},${H - botPad} Z`;
+        return `<path d="${colPath}" fill="${fillColor}" stroke="none" />`;
+      }
+
+      if (showBurleyMode) {
+        data.burleyWindows.forEach(bw => {
+          const sHr = (bw.start.getTime() - data.dayStart.getTime()) / 3600000;
+          const eHr = (bw.end.getTime() - data.dayStart.getTime()) / 3600000;
+          svgHTML += buildColumnUnderCurve(sHr, eHr, 'rgba(0, 230, 118, 0.28)');
+        });
+      }
+
+      if (activeWindow) {
+        svgHTML += buildColumnUnderCurve(activeWindow.sHr, activeWindow.eHr, activeWindow.color);
+      }
+
+      const lineD = pts.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+      const fillD = `${lineD} L ${(W - rightPad).toFixed(1)},${H - botPad} L ${leftPad},${H - botPad} Z`;
+
+      svgHTML += `
+        <defs>
+          <linearGradient id="curveGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.32"/>
+            <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
+          </linearGradient>
+        </defs>
+        <path d="${fillD}" fill="url(#curveGrad)" stroke="none" />
+        <path d="${lineD}" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+      `;
+
+      const now = new Date();
+      if (now >= data.dayStart && now < data.dayEnd) {
+        const curHr = (now - data.dayStart) / 3600000;
+        const curX = leftPad + (curHr / 24) * graphW;
+        const curY = topPad + graphH * (1 - evaluateActivity(curHr, data) / 100);
+        svgHTML += `<circle cx="${curX.toFixed(1)}" cy="${curY.toFixed(1)}" r="5.5" fill="#e53935" stroke="#ffffff" stroke-width="2" />`;
+      }
+
+      if (scrubHour !== null) {
+        const sx = leftPad + (scrubHour / 24) * graphW;
+        const sAct = evaluateActivity(scrubHour, data);
+        const sy = topPad + graphH * (1 - sAct / 100);
+        const totalMinutes = Math.round(scrubHour * 60);
+        let h = Math.floor(totalMinutes / 60) % 24;
+        const m = totalMinutes % 60;
+        const ampm = h >= 12 ? 'pm' : 'am';
+        const h12 = h % 12 || 12;
+        const timeLabel = `${h12}:${m < 10 ? '0' : ''}${m} ${ampm}`;
+
+        const pillW = 68, pillH = 22;
+        const pillX = Math.max(leftPad + 2, Math.min(W - rightPad - pillW - 2, sx - pillW / 2));
+        const pillY = Math.max(topPad - 6, sy - 30);
+
+        svgHTML += `
+          <line x1="${sx.toFixed(1)}" y1="${topPad}" x2="${sx.toFixed(1)}" y2="${H - botPad}" stroke="rgba(255,255,255,0.8)" stroke-width="1.2" />
+          <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="4.5" fill="#ffffff" stroke="#105cc0" stroke-width="2" />
+          <rect x="${pillX.toFixed(1)}" y="${pillY.toFixed(1)}" width="${pillW}" height="${pillH}" rx="3" fill="#1b2430" stroke="rgba(255,255,255,0.25)" stroke-width="0.8" />
+          <text x="${(pillX + pillW / 2).toFixed(1)}" y="${(pillY + 15).toFixed(1)}" fill="#ffffff" font-size="11" font-weight="500" text-anchor="middle">${timeLabel}</text>
+        `;
+      }
+
+      svg.innerHTML = svgHTML;
     }
 
-    function initMap() {
-      map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-41.2866, 174.8300], 10);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-      document.getElementById('spots-checkboxes').innerHTML = savedSpots.map((s,i) => `<label><input type="checkbox" class="spot-chk" value="${i}" onchange="runRoutingAndTimeline()"> ${s.name}</label>`).join('');
-      if(document.querySelector('.spot-chk')) document.querySelector('.spot-chk').checked = true;
-      runRoutingAndTimeline();
+    // =========================================================================
+    // 4. MARITIME CHANNEL ROUTING ENGINE (AVOIDS CUTTING ACROSS LAND)
+    // =========================================================================
+    function classifyZone(lat, lon) {
+      if (lat > -41.15) return 'west'; // Porirua / Mana / Hunters
+      if (lon < 174.73 && lat > -41.32) return 'west_south'; // Makara / Terawhiti
+      if (lat < -41.345) return 'south'; // South Coast / Pencarrow / Red Rocks
+      if (lat > -41.312 && lon > 174.78 && lon < 174.92) {
+        if (lon < 174.825 || lat > -41.285) return 'inner_harbour'; // Evans Bay / Lambton / Seaview
+      }
+      return 'outer_harbour'; // Seatoun / Ward Island / Barrett Reef
+    }
+
+    // Returns intermediate safe-water sea gates between two points so lines never cross land
+    function getSafeWaterLeg(ptA, ptB) {
+      const zA = classifyZone(ptA[0], ptA[1]);
+      const zB = classifyZone(ptB[0], ptB[1]);
+      const waypoints = [];
+
+      // Leaving Paremata / Ngatitoa Marina requires clearing Porirua Harbour entrance first
+      const isParemataA = Math.abs(ptA[0] - (-41.1008)) < 0.01 && Math.abs(ptA[1] - 174.8625) < 0.015;
+      const isParemataB = Math.abs(ptB[0] - (-41.1008)) < 0.01 && Math.abs(ptB[1] - 174.8625) < 0.015;
+
+      if (isParemataA) waypoints.push(WATER_GATES.PORIRUA_ENTRANCE, WATER_GATES.TITAHI_CLEAR);
+
+      if (zA !== zB) {
+        const routeKey = `${zA}->${zB}`;
+        switch (routeKey) {
+          case 'inner_harbour->outer_harbour':
+            waypoints.push(WATER_GATES.PT_HALSWELL, WATER_GATES.FALCON_SHOAL);
+            break;
+          case 'outer_harbour->inner_harbour':
+            waypoints.push(WATER_GATES.FALCON_SHOAL, WATER_GATES.PT_HALSWELL);
+            break;
+          case 'inner_harbour->south':
+            waypoints.push(WATER_GATES.PT_HALSWELL, WATER_GATES.FALCON_SHOAL, WATER_GATES.PENCARROW_GATE);
+            break;
+          case 'south->inner_harbour':
+            waypoints.push(WATER_GATES.PENCARROW_GATE, WATER_GATES.FALCON_SHOAL, WATER_GATES.PT_HALSWELL);
+            break;
+          case 'outer_harbour->south':
+            waypoints.push(WATER_GATES.PENCARROW_GATE);
+            break;
+          case 'south->outer_harbour':
+            waypoints.push(WATER_GATES.PENCARROW_GATE);
+            break;
+          case 'inner_harbour->west_south':
+          case 'inner_harbour->west':
+            waypoints.push(WATER_GATES.PT_HALSWELL, WATER_GATES.FALCON_SHOAL, WATER_GATES.PENCARROW_GATE, WATER_GATES.SOUTH_COAST_LANE, WATER_GATES.KARORI_ROCK_GATE, WATER_GATES.CAPE_TERAWHITI);
+            if (zB === 'west') waypoints.push(WATER_GATES.MAKARA_OFFSHORE);
+            break;
+          case 'outer_harbour->west_south':
+          case 'outer_harbour->west':
+            waypoints.push(WATER_GATES.PENCARROW_GATE, WATER_GATES.SOUTH_COAST_LANE, WATER_GATES.KARORI_ROCK_GATE, WATER_GATES.CAPE_TERAWHITI);
+            if (zB === 'west') waypoints.push(WATER_GATES.MAKARA_OFFSHORE);
+            break;
+          case 'west->inner_harbour':
+            waypoints.push(WATER_GATES.MAKARA_OFFSHORE, WATER_GATES.CAPE_TERAWHITI, WATER_GATES.KARORI_ROCK_GATE, WATER_GATES.SOUTH_COAST_LANE, WATER_GATES.PENCARROW_GATE, WATER_GATES.FALCON_SHOAL, WATER_GATES.PT_HALSWELL);
+            break;
+          case 'west->outer_harbour':
+            waypoints.push(WATER_GATES.MAKARA_OFFSHORE, WATER_GATES.CAPE_TERAWHITI, WATER_GATES.KARORI_ROCK_GATE, WATER_GATES.SOUTH_COAST_LANE, WATER_GATES.PENCARROW_GATE);
+            break;
+          case 'west->south':
+            waypoints.push(WATER_GATES.MAKARA_OFFSHORE, WATER_GATES.CAPE_TERAWHITI, WATER_GATES.KARORI_ROCK_GATE, WATER_GATES.SOUTH_COAST_LANE);
+            break;
+          case 'south->west':
+            waypoints.push(WATER_GATES.SOUTH_COAST_LANE, WATER_GATES.KARORI_ROCK_GATE, WATER_GATES.CAPE_TERAWHITI, WATER_GATES.MAKARA_OFFSHORE);
+            break;
+          case 'west->west_south':
+            waypoints.push(WATER_GATES.MAKARA_OFFSHORE);
+            break;
+          case 'west_south->west':
+            waypoints.push(WATER_GATES.MAKARA_OFFSHORE);
+            break;
+        }
+      }
+
+      if (isParemataB) waypoints.push(WATER_GATES.TITAHI_CLEAR, WATER_GATES.PORIRUA_ENTRANCE);
+      return waypoints;
+    }
+
+    function buildFullWaterRoute(stops) {
+      if (stops.length < 2) return stops;
+      const fullPath = [stops[0]];
+      for (let i = 0; i < stops.length - 1; i++) {
+        const a = stops[i], b = stops[i + 1];
+        const gates = getSafeWaterLeg(a, b);
+        gates.forEach(g => fullPath.push(g));
+        fullPath.push(b);
+      }
+      return fullPath;
     }
 
     function getNmDistance(lat1, lon1, lat2, lon2) {
-      const dLat = (lat2-lat1)*RAD, dLon = (lon2-lon1)*RAD;
-      const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*RAD)*Math.cos(lat2*RAD)*Math.sin(dLon/2)*Math.sin(dLon/2);
-      return 3440.065 * (2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+      const dLat = (lat2 - lat1) * RAD, dLon = (lon2 - lon1) * RAD;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * RAD) * Math.cos(lat2 * RAD) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return 3440.065 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
     }
 
-    window.runRoutingAndTimeline = function() {
-      if(!map || !currentData) return;
-      markers.forEach(m => map.removeLayer(m)); if(polyline) map.removeLayer(polyline); markers = [];
-      const ramp = document.getElementById('ramp-select').value.split(',').map(Number);
-      const pts = [[ramp[0], ramp[1]]];
-      document.querySelectorAll('.spot-chk:checked').forEach(c => pts.push([savedSpots[c.value].lat, savedSpots[c.value].lon]));
-      pts.push([ramp[0], ramp[1]]);
-      
-      let totalNm = 0; for(let i=0; i<pts.length-1; i++) totalNm += getNmDistance(pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1]);
-      const speed = parseFloat(document.getElementById('boat-speed').value) || 20;
-      const tHrs = totalNm/speed;
-      document.getElementById('route-dist').textContent = `Dist: ${totalNm.toFixed(1)} nm`;
-      document.getElementById('route-time').textContent = `Time: ${Math.floor(tHrs)}h ${Math.round((tHrs%1)*60)}m`;
-      document.getElementById('route-fuel').textContent = `Fuel: ${Math.ceil(tHrs * (parseFloat(document.getElementById('boat-burn').value)||25) * 1.3)} L`;
-      
-      polyline = L.polyline(pts, {color: '#00e676', weight: 3}).addTo(map);
-      pts.forEach((p,i) => markers.push(L.circleMarker(p, {radius: 5, color: '#fff'}).addTo(map)));
-      map.fitBounds(polyline.getBounds(), {padding: [10,10]});
+    window.syncEndRamp = function() {
+      document.getElementById('ramp-end').value = document.getElementById('ramp-start').value;
+    };
 
-      // Timeline Logic
-      const majs = currentData.majors.filter(t=>t>=currentData.dayStart && t<currentData.dayEnd);
-      const mins = currentData.minors.filter(t=>t>=currentData.dayStart && t<currentData.dayEnd);
+    window.clearTempWaypoints = function() {
+      tempWaypoints = [];
+      runRoutingAndTimeline();
+    };
+
+    window.runRoutingAndTimeline = function() {
+      if (!map || !currentData) return;
+      markers.forEach(m => map.removeLayer(m));
+      if (polyline) map.removeLayer(polyline);
+      markers = [];
+
+      const startRamp = RAMPS[document.getElementById('ramp-start').value];
+      const endRamp = RAMPS[document.getElementById('ramp-end').value];
+
+      const primaryStops = [[startRamp.lat, startRamp.lon]];
+      document.querySelectorAll('.spot-chk:checked').forEach(c => {
+        const sp = allSpots[c.value];
+        if (sp) primaryStops.push([sp.lat, sp.lon]);
+      });
+      tempWaypoints.forEach(wp => primaryStops.push([wp.lat, wp.lng]));
+      primaryStops.push([endRamp.lat, endRamp.lon]);
+
+      const waterRoute = buildFullWaterRoute(primaryStops);
+
+      let totalNm = 0;
+      for (let i = 0; i < waterRoute.length - 1; i++) {
+        totalNm += getNmDistance(waterRoute[i][0], waterRoute[i][1], waterRoute[i + 1][0], waterRoute[i + 1][1]);
+      }
+
+      // First-spot distance for accurate launch-to-spot timing
+      let firstLegNm = 0;
+      if (primaryStops.length > 1) {
+        const firstLegWater = buildFullWaterRoute([primaryStops[0], primaryStops[1]]);
+        for (let i = 0; i < firstLegWater.length - 1; i++) {
+          firstLegNm += getNmDistance(firstLegWater[i][0], firstLegWater[i][1], firstLegWater[i + 1][0], firstLegWater[i + 1][1]);
+        }
+      }
+
+      const speed = parseFloat(document.getElementById('boat-speed').value) || 20;
+      const burn = parseFloat(document.getElementById('boat-burn').value) || 24;
+      const reservePct = parseFloat(document.getElementById('boat-reserve').value) || 30;
+      const tankCap = parseFloat(document.getElementById('boat-tank').value) || 110;
+
+      const tHrs = totalNm / speed;
+      const reqFuel = Math.ceil(tHrs * burn * (1 + reservePct / 100));
+
+      document.getElementById('route-dist').textContent = `Dist: ${totalNm.toFixed(1)} nm`;
+      document.getElementById('route-time').textContent = `Steam: ${Math.floor(tHrs)}h ${Math.round((tHrs % 1) * 60)}m`;
+      const fuelEl = document.getElementById('route-fuel');
+      fuelEl.textContent = `Fuel: ${reqFuel}L / ${tankCap}L`;
+      fuelEl.style.color = reqFuel > tankCap ? '#ff5252' : '#00e676';
+
+      polyline = L.polyline(waterRoute, { color: '#00e676', weight: 3, dashArray: '6, 4' }).addTo(map);
+
+      // Draw primary stop markers
+      primaryStops.forEach((p, i) => {
+        const isRamp = (i === 0 || i === primaryStops.length - 1);
+        const m = L.circleMarker(p, {
+          radius: isRamp ? 7 : 5.5,
+          color: isRamp ? '#ffeb3b' : '#ffffff',
+          fillColor: isRamp ? '#ffeb3b' : '#00e676',
+          fillOpacity: 1
+        }).addTo(map);
+        markers.push(m);
+      });
+
+      map.fitBounds(polyline.getBounds(), { padding: [18, 18] });
+
+      // Timeline reverse calculation
+      const majs = currentData.majors.filter(t => t >= currentData.dayStart && t < currentData.dayEnd);
+      const mins = currentData.minors.filter(t => t >= currentData.dayStart && t < currentData.dayEnd);
       const pSel = document.getElementById('target-phase').value;
-      let tgt = majs[0] || new Date(currentData.dayStart.getTime()+8*3600000);
-      if(pSel==='major2' && majs.length>1) tgt = majs[1]; else if(pSel==='minor1' && mins.length>0) tgt = mins[0];
-      
-      const arr = new Date(tgt.getTime() - (pSel.includes('major')?4500000:2700000));
-      const launch = new Date(arr.getTime() - (pts.length>2 ? getNmDistance(pts[0][0],pts[0][1],pts[1][0],pts[1][1])/speed*3600000 : 0));
-      const wake = new Date(launch.getTime() - (parseInt(document.getElementById('prep-buffer').value)||90)*60000);
-      
+
+      let tgt = majs[0] || new Date(currentData.dayStart.getTime() + 8 * 3600000);
+      if (pSel === 'major2' && majs.length > 1) tgt = majs[1];
+      else if (pSel === 'minor1' && mins.length > 0) tgt = mins[0];
+      else if (pSel === 'minor2' && mins.length > 1) tgt = mins[1];
+
+      const winOffset = pSel.includes('major') ? 1.25 * 3600000 : 0.75 * 3600000;
+      const firstLegHrs = firstLegNm / speed;
+
+      const arr = new Date(tgt.getTime() - winOffset);
+      const launch = new Date(arr.getTime() - firstLegHrs * 3600000);
+      const wake = new Date(launch.getTime() - (parseInt(document.getElementById('prep-buffer').value) || 75) * 60000);
+
       document.getElementById('timeline-output').innerHTML = `
-        <div class="tl-row"><div class="tl-time">${formatClock(wake)}</div><div class="tl-desc"><strong>Wake & Prep</strong><br>Hook up, checks, drive to ramp.</div></div>
-        <div class="tl-row"><div class="tl-time">${formatClock(launch)}</div><div class="tl-desc"><strong>Launch Boat</strong></div></div>
-        <div class="tl-row"><div class="tl-time">${formatClock(arr)}</div><div class="tl-desc"><strong>Arrive at Spot</strong><br>Lines in water. Window opening.</div></div>
-        <div class="tl-row"><div class="tl-time">${formatClock(tgt)}</div><div class="tl-desc"><strong>Peak Activity</strong></div></div>`;
+        <div class="tl-row"><div class="tl-time">${formatClock(wake)}</div><div class="tl-desc"><strong>Wake Up & Prep</strong><br>Hitch boat, check bungs & gear, drive to ${startRamp.name}.</div></div>
+        <div class="tl-row"><div class="tl-time">${formatClock(launch)}</div><div class="tl-desc"><strong>Launch & Clear Ramp</strong><br>Steam ${firstLegNm.toFixed(1)} nm (${Math.round(firstLegHrs * 60)} mins) to first mark.</div></div>
+        <div class="tl-row"><div class="tl-time">${formatClock(arr)}</div><div class="tl-desc"><strong>Lines in Water</strong><br>Arrive as Solunar window opens. Deploy burley.</div></div>
+        <div class="tl-row"><div class="tl-time">${formatClock(tgt)}</div><div class="tl-desc"><strong>Peak Solunar Bite</strong><br>Maximum lunar transit/horizon activity.</div></div>
+      `;
+    };
+
+    // =========================================================================
+    // 5. MAPS, VESSEL PROFILE & CHECKLIST MANAGEMENT
+    // =========================================================================
+    function initMaps() {
+      map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-41.22, 174.80], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+      // Tap route map to add quick water turning point
+      map.on('click', (e) => {
+        tempWaypoints.push(e.latlng);
+        runRoutingAndTimeline();
+      });
+
+      creatorMap = L.map('map-creator', { zoomControl: false, attributionControl: false }).setView([-41.22, 174.80], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(creatorMap);
+
+      creatorMap.on('click', (e) => {
+        pickedLatLng = e.latlng;
+        document.getElementById('new-spot-coords').value = `${pickedLatLng.lat.toFixed(4)}, ${pickedLatLng.lng.toFixed(4)}`;
+        if (creatorMarker) creatorMap.removeLayer(creatorMarker);
+        creatorMarker = L.marker(pickedLatLng).addTo(creatorMap);
+      });
+
+      refreshSpotsUI();
+    }
+
+    function refreshSpotsUI() {
+      allSpots = [...defaultSpots, ...customSpots];
+      document.getElementById('spots-checkboxes').innerHTML = allSpots.map((s, i) => `
+        <label><input type="checkbox" class="spot-chk" value="${i}" ${i === 1 ? 'checked' : ''} onchange="runRoutingAndTimeline()"> ${s.name}</label>
+      `).join('');
+
+      document.getElementById('custom-spots-list').innerHTML = customSpots.map((s, i) => `
+        <div class="saved-spot-row">
+          <span><strong>${s.name}</strong> (${s.lat.toFixed(3)}, ${s.lon.toFixed(3)})</span>
+          <button class="del-btn" onclick="deleteCustomSpot(${i})">Delete</button>
+        </div>
+      `).join('') || '<span style="font-size:0.75rem; color:var(--text-muted);">No custom marks saved yet. Tap the map above to add one.</span>';
+
+      runRoutingAndTimeline();
+    }
+
+    window.saveCustomSpot = function() {
+      const name = document.getElementById('new-spot-name').value.trim();
+      const rawCoords = document.getElementById('new-spot-coords').value.trim();
+      if (!name || !rawCoords) return;
+      const parts = rawCoords.split(',').map(Number);
+      if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return;
+
+      customSpots.push({ name, lat: parts[0], lon: parts[1] });
+      localStorage.setItem('custom_spots_v2', JSON.stringify(customSpots));
+      document.getElementById('new-spot-name').value = '';
+      document.getElementById('new-spot-coords').value = '';
+      if (creatorMarker) creatorMap.removeLayer(creatorMarker);
+      refreshSpotsUI();
+    };
+
+    window.deleteCustomSpot = function(idx) {
+      customSpots.splice(idx, 1);
+      localStorage.setItem('custom_spots_v2', JSON.stringify(customSpots));
+      refreshSpotsUI();
+    };
+
+    function saveProfile() {
+      const profile = {
+        name: document.getElementById('boat-name').value,
+        speed: document.getElementById('boat-speed').value,
+        burn: document.getElementById('boat-burn').value,
+        tank: document.getElementById('boat-tank').value,
+        reserve: document.getElementById('boat-reserve').value
+      };
+      localStorage.setItem('vessel_profile_v2', JSON.stringify(profile));
+      document.getElementById('boat-title-header').textContent = `${profile.name} • Fish Activity`;
+    }
+
+    function loadProfile() {
+      const saved = JSON.parse(localStorage.getItem('vessel_profile_v2') || 'null');
+      if (saved) {
+        document.getElementById('boat-name').value = saved.name || 'Tewaiwhare';
+        document.getElementById('boat-speed').value = saved.speed || 20;
+        document.getElementById('boat-burn').value = saved.burn || 24;
+        document.getElementById('boat-tank').value = saved.tank || 110;
+        document.getElementById('boat-reserve').value = saved.reserve || 30;
+      }
+      document.getElementById('boat-title-header').textContent = `${document.getElementById('boat-name').value} • Fish Activity`;
+    }
+
+    // Gear Checklist with Persistent Custom Items
+    let customGear = JSON.parse(localStorage.getItem('custom_gear_v2') || '[]');
+    let checkedState = JSON.parse(localStorage.getItem('checked_gear_v2') || '{}');
+
+    const SPECIES_GEAR = {
+      kingfish: ['Heavy Jigging Rods (PE5–8)', '200g–300g Knife Jigs & Assist Hooks', 'Livebait Sabikis & Livewell Pump Check', '80lb–100lb Fluorocarbon Leader', 'Gimbal Belt, Gaff & Heavy Pliers'],
+      snapper: ['Strayline Sets & Baitrunner Reels', '1/4oz–1oz Ball Sinkers & Recurve Hooks', 'Burley Bomb, Cage & Muncher', 'Pilchards, Squid & Bonito Bait', 'Iki Spike & Chilly Bin with Salt Ice'],
+      groper: ['Deep Drop Electric/Manualombo Sets', '16/0 Circle Hooks & LuminescentRigs', '24oz–32oz Puka Leads', 'Heavy Boat Anchor, Chain & Alderney Ring', 'Whole Kahawai / Barracouta Baits'],
+      pelagic: ['Trolling Lures (Bibbed & Skirted)', 'Spinning Rod with 40g–60g Metal Jigs', 'Landing Net & Measuring Mat', ' Salt Ice Slurry Ready']
+    };
+
+    const BASE_ESSENTIALS = [
+      'Bungs In (Port & Starboard Checked)',
+      'Lifejackets (1 per person on board)',
+      'VHF Radio (Test Ch 16 / Ch 62)',
+      'Anchor, Warp & Chain Secured',
+      'Flares, First Aid Kit & Bailer',
+      'Nav Lights & Bilge Pump Checked'
+    ];
+
+    window.toggleCheckItem = function(key, checked) {
+      checkedState[key] = checked;
+      localStorage.setItem('checked_gear_v2', JSON.stringify(checkedState));
+    };
+
+    window.resetChecks = function() {
+      checkedState = {};
+      localStorage.setItem('checked_gear_v2', '{}');
+      renderChecklist();
+    };
+
+    window.addCustomGear = function() {
+      const inp = document.getElementById('custom-gear-input');
+      const val = inp.value.trim();
+      if (!val) return;
+      customGear.push(val);
+      localStorage.setItem('custom_gear_v2', JSON.stringify(customGear));
+      inp.value = '';
+      renderChecklist();
+    };
+
+    window.removeCustomGear = function(idx) {
+      customGear.splice(idx, 1);
+      localStorage.setItem('custom_gear_v2', JSON.stringify(customGear));
+      renderChecklist();
     };
 
     window.renderChecklist = function() {
       const sp = document.getElementById('species-select').value;
-      let list = `
-        <div class="checklist-group"><h4>Base Boat Safety</h4>
-          <label class="check-item"><input type="checkbox"> Life Jackets (Checked & Fitted)</label>
-          <label class="check-item"><input type="checkbox"> VHF Radio (Ch 16 working)</label>
-          <label class="check-item"><input type="checkbox"> Flares & First Aid Kit</label>
-          <label class="check-item"><input type="checkbox"> Anchor & Chain</label>
-        </div>`;
-      if(sp === 'kingfish') {
-        list += `<div class="checklist-group"><h4>Kingfish Gear</h4>
-          <label class="check-item"><input type="checkbox"> Heavy Jigging Rods (PE6-8)</label>
-          <label class="check-item"><input type="checkbox"> 200g-300g Jigs & Assist Hooks</label>
-          <label class="check-item"><input type="checkbox"> Livebait Net & Aerator Check</label>
-          <label class="check-item"><input type="checkbox"> 80lb+ Fluorocarbon Trace</label></div>`;
-      } else if (sp === 'snapper') {
-        list += `<div class="checklist-group"><h4>Snapper Gear</h4>
-          <label class="check-item"><input type="checkbox"> Strayline Rigs & Sinkers</label>
-          <label class="check-item"><input type="checkbox"> Softbait Rods & Jerkshads</label>
-          <label class="check-item"><input type="checkbox"> Burley Bombs & Dispenser</label></div>`;
+      const spItems = SPECIES_GEAR[sp] || [];
+
+      const renderItem = (label, idxKey, delIdx = null) => {
+        const isChk = checkedState[idxKey] ? 'checked' : '';
+        const delBtn = delIdx !== null ? `<button class="del-btn" onclick="removeCustomGear(${delIdx})">✕</button>` : '';
+        return `
+          <div class="check-item">
+            <label><input type="checkbox" ${isChk} onchange="toggleCheckItem('${idxKey}', this.checked)"> <span>${label}</span></label>
+            ${delBtn}
+          </div>
+        `;
+      };
+
+      let html = `<div class="checklist-group"><h4>🛥️ Vessel & Safety Essentials</h4>`;
+      BASE_ESSENTIALS.forEach((item, i) => { html += renderItem(item, 'base_' + i); });
+      html += `</div>`;
+
+      html += `<div class="checklist-group"><h4>🎣 Target Species Tackle</h4>`;
+      spItems.forEach((item, i) => { html += renderItem(item, sp + '_' + i); });
+      html += `</div>`;
+
+      if (customGear.length > 0) {
+        html += `<div class="checklist-group"><h4>➕ Custom Mission Extras</h4>`;
+        customGear.forEach((item, i) => { html += renderItem(item, 'cust_' + i, i); });
+        html += `</div>`;
       }
-      document.getElementById('checklist-render').innerHTML = list;
+
+      document.getElementById('checklist-render').innerHTML = html;
     };
 
+    // =========================================================================
+    // 6. GLOBAL EVENT HANDLERS & INITIALIZATION
+    // =========================================================================
+    window.switchTab = function(tabId, btnElement) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + tabId).classList.add('active');
+      document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+      btnElement.classList.add('active');
+      if (tabId === 'route' && map) setTimeout(() => { map.invalidateSize(); runRoutingAndTimeline(); }, 150);
+      if (tabId === 'vessel' && creatorMap) setTimeout(() => creatorMap.invalidateSize(), 150);
+    };
+
+    const chartArea = document.getElementById('chart-area');
+    function handleScrub(e) {
+      if (!currentData) return;
+      const rect = chartArea.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const W = 440, leftPad = 62, rightPad = 12, graphW = W - leftPad - rightPad;
+      const clickX = (clientX - rect.left) * (W / rect.width);
+      const clampedX = Math.max(leftPad, Math.min(W - rightPad, clickX));
+      scrubHour = ((clampedX - leftPad) / graphW) * 24;
+      drawChart(currentData);
+    }
+    chartArea.addEventListener('pointerdown', (e) => { handleScrub(e); chartArea.setPointerCapture(e.pointerId); });
+    chartArea.addEventListener('pointermove', (e) => { if (e.buttons || e.touches) handleScrub(e); });
+
     function renderDateStrip() {
-      const s = document.getElementById('date-strip'); s.innerHTML = ''; const td = new Date();
-      for(let i=-3; i<=3; i++) {
-        const d = new Date(selectedDate); d.setDate(d.getDate()+i);
-        const cell = document.createElement('div'); cell.className = `date-item ${i===0?'active':''}`;
-        cell.innerHTML = `<div class="day-num">${d.getDate()}</div><div class="day-name">${d.toDateString()===td.toDateString()?'TODAY':['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()]}</div>`;
-        cell.onclick = () => { selectedDate = d; renderDateStrip(); renderSolunar(); }; s.appendChild(cell);
+      const strip = document.getElementById('date-strip');
+      strip.innerHTML = '';
+      const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+      const today = new Date();
+
+      for (let offset = -3; offset <= 3; offset++) {
+        const d = new Date(selectedDate);
+        d.setDate(selectedDate.getDate() + offset);
+        const isToday = d.toDateString() === today.toDateString();
+
+        const cell = document.createElement('div');
+        cell.className = `date-item ${offset === 0 ? 'active' : ''}`;
+        cell.innerHTML = `<div class="day-num">${d.getDate()}</div><div class="day-name">${isToday ? 'TODAY' : days[d.getDay()]}</div>`;
+        cell.onclick = () => {
+          selectedDate = d;
+          activeWindow = null;
+          scrubHour = null;
+          renderDateStrip();
+          renderSolunar();
+        };
+        strip.appendChild(cell);
       }
     }
 
-    document.getElementById('loc-select-main').onchange = (e) => { currentLocKey = e.target.value; renderSolunar(); };
-    document.getElementById('burley-btn').onclick = function() { showBurleyMode = !showBurleyMode; this.classList.toggle('active'); renderSolunar(); };
-    
-    renderDateStrip(); setTimeout(() => { renderSolunar(); initMap(); renderChecklist(); }, 200);
+    document.getElementById('loc-select-main').onchange = (e) => {
+      currentLocKey = e.target.value;
+      activeWindow = null;
+      renderSolunar();
+    };
+
+    const burleyBtn = document.getElementById('burley-btn');
+    burleyBtn.onclick = () => {
+      showBurleyMode = !showBurleyMode;
+      burleyBtn.classList.toggle('active', showBurleyMode);
+      renderSolunar();
+    };
+
+    const picker = document.getElementById('date-picker');
+    document.getElementById('cal-btn').onclick = () => {
+      if (picker.showPicker) picker.showPicker();
+      else picker.click();
+    };
+    picker.onchange = (e) => {
+      if (!e.target.value) return;
+      const [y, m, d] = e.target.value.split('-').map(Number);
+      selectedDate = new Date(y, m - 1, d, 12, 0, 0);
+      activeWindow = null;
+      scrubHour = null;
+      renderDateStrip();
+      renderSolunar();
+    };
+
+    loadProfile();
+    renderDateStrip();
+    renderChecklist();
+    renderSolunar();
+    setTimeout(initMaps, 200);
   </script>
 </body>
 </html>
