@@ -2,26 +2,40 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#071526" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Fish Activity & Mission Control</title>
+
+  <!-- Leaflet is the ONLY outside file. If it fails to load (no signal at sea) everything except the map
+       still works: solunar, tides, fuel maths, timeline, gear and spots all run offline. -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+
   <style>
+    /* =====================================================================
+       THEME TOKENS - change colours / touch size here
+       ===================================================================== */
     :root {
       --bg-dark: #071526;
-      --bg-ocean: #0d2847;
-      --bg-card: rgba(13, 38, 69, 0.76);
+      --bg-card: rgba(13, 38, 69, 0.62);
+      --bg-card-solid: #0d2647;
       --border-card: rgba(144, 202, 249, 0.2);
       --text-main: #f0f6fc;
       --text-muted: rgba(220, 235, 252, 0.68);
       --neon-green: #00ff88;
       --neon-cyan: #00e5ff;
       --gold-accent: #ffd15c;
+      --amber: #ffb300;
+      --danger: #ff5252;
       --glow-green: 0 0 12px rgba(0, 255, 136, 0.45);
       --glow-cyan: 0 0 12px rgba(0, 229, 255, 0.45);
+      --tap: 48px;               /* minimum touch target - big enough for wet / gloved hands */
+      --radius: 14px;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
     * {
       box-sizing: border-box;
@@ -31,13 +45,17 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     body {
-      background: radial-gradient(circle at top, #0f325a 0%, #071526 100%);
+      background: radial-gradient(circle at top, #0f325a 0%, #071526 100%) fixed;
       color: var(--text-main);
       min-height: 100vh;
       overflow-x: hidden;
-      user-select: none;
       -webkit-user-select: none;
+      user-select: none;
     }
+    /* iOS Safari: let people select/paste coordinates inside fields */
+    input, textarea, select { -webkit-user-select: text; user-select: text; }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
     .app-shell {
       width: 100%;
       max-width: 440px;
@@ -45,54 +63,69 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      padding-bottom: 84px;
+      padding-bottom: calc(92px + var(--safe-bottom));
       position: relative;
     }
     .tab-content { display: none; flex-direction: column; flex-grow: 1; }
-    .tab-content.active { display: flex; }
+    .tab-content.active { display: flex; animation: fadeUp 0.25s ease; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
-    header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 6px; }
+    /* ---------- Header & date strip ---------- */
+    header { display: flex; align-items: center; justify-content: space-between; padding: calc(14px + var(--safe-top)) 18px 6px; gap: 10px; }
     header h1 {
-      font-size: 1.22rem;
+      font-size: 1.2rem;
       font-weight: 600;
       letter-spacing: 0.3px;
       background: linear-gradient(90deg, #ffffff, #90caf9);
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+    /* The date input is stretched invisibly over the button so iOS opens the native picker on tap */
     .cal-trigger {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
       background: rgba(255, 255, 255, 0.1);
       border: 1px solid var(--border-card);
       color: var(--text-main);
-      border-radius: 18px;
-      padding: 5px 12px;
-      font-size: 0.75rem;
-      cursor: pointer;
+      border-radius: 22px;
+      padding: 0 16px;
+      font-size: 0.85rem;
       font-weight: 500;
+      -webkit-backdrop-filter: blur(8px);
       backdrop-filter: blur(8px);
+      flex-shrink: 0;
+      overflow: hidden;
     }
-    #date-picker { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+    .cal-trigger input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; cursor: pointer; }
 
-    .date-strip { display: grid; grid-template-columns: repeat(7, 1fr); padding: 6px 10px 8px; text-align: center; gap: 3px; }
-    .date-item { padding: 6px 0; cursor: pointer; color: var(--text-muted); border-radius: 8px; transition: all 0.2s; }
+    .date-strip { display: grid; grid-template-columns: repeat(7, 1fr); padding: 6px 10px 8px; text-align: center; gap: 4px; }
+    .date-item { padding: 8px 0; min-height: 56px; cursor: pointer; color: var(--text-muted); border-radius: 10px; border: 1px solid transparent; transition: all 0.2s; }
     .date-item.active {
       color: #fff;
       background: rgba(0, 229, 255, 0.14);
-      border: 1px solid rgba(0, 229, 255, 0.35);
+      border-color: rgba(0, 229, 255, 0.35);
       box-shadow: var(--glow-cyan);
       font-weight: 600;
     }
     .date-item .day-num { font-size: 1.15rem; margin-bottom: 2px; }
-    .date-item .day-name { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.3px; }
+    .date-item .day-name { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.3px; }
 
-    .module-panel {
+    /* ---------- Glass panels ---------- */
+    .module-panel, .tide-panel {
       background: var(--bg-card);
       border: 1px solid var(--border-card);
-      border-radius: 12px;
+      border-radius: var(--radius);
       padding: 14px;
       margin: 8px 16px;
-      backdrop-filter: blur(12px);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      -webkit-backdrop-filter: blur(14px) saturate(1.2);
+      backdrop-filter: blur(14px) saturate(1.2);
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
     }
     .module-header {
       font-size: 0.8rem;
@@ -102,56 +135,89 @@
       color: #90caf9;
       margin-bottom: 12px;
       border-bottom: 1px solid rgba(144, 202, 249, 0.12);
-      padding-bottom: 6px;
+      padding-bottom: 8px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 8px;
     }
+    .hint { font-size: 0.74rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 10px; }
 
-    .controls-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 16px 4px; gap: 8px; }
+    /* ---------- Buttons ---------- */
+    .btn {
+      min-height: var(--tap);
+      padding: 0 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border-card);
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.08);
+      transition: transform 0.12s, opacity 0.15s, box-shadow 0.2s;
+    }
+    .btn:active { transform: scale(0.96); opacity: 0.85; }
+    .btn-primary { background: var(--neon-green); color: #042414; border-color: var(--neon-green); }
+    .btn-ghost { background: transparent; }
+    .btn-small { min-height: 40px; padding: 0 12px; font-size: 0.74rem; }
+    .btn-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .btn-row > * { flex: 1; }
+    .del-btn { min-width: 44px; min-height: 44px; background: rgba(229, 57, 53, 0.9); color: #fff; border: none; border-radius: 10px; cursor: pointer; font-size: 0.8rem; font-weight: 700; flex-shrink: 0; }
+    .del-btn:active { transform: scale(0.94); }
+    .file-btn { position: relative; overflow: hidden; }
+    .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 16px; }
+
+    /* ---------- Solunar tab ---------- */
+    .controls-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 16px; gap: 8px; }
     .burley-btn {
+      min-height: var(--tap);
       background: rgba(0, 255, 136, 0.12);
       color: var(--neon-green);
       border: 1px solid rgba(0, 255, 136, 0.3);
-      border-radius: 18px;
-      padding: 6px 14px;
-      font-size: 0.78rem;
+      border-radius: 24px;
+      padding: 0 16px;
+      font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       gap: 6px;
       white-space: nowrap;
+      transition: all 0.2s;
     }
-    .burley-btn.active {
-      background: var(--neon-green);
-      color: #042414;
-      box-shadow: var(--glow-green);
-      border-color: var(--neon-green);
-    }
-    .loc-select, .input-group select, .input-group input {
+    .burley-btn.active { background: var(--neon-green); color: #042414; box-shadow: var(--glow-green); border-color: var(--neon-green); }
+
+    /* Form fields. 16px font stops iOS zooming in on focus */
+    .loc-select, .input-group select, .input-group input, .input-group textarea, #backup-text {
       background: rgba(7, 21, 38, 0.75);
       color: #fff;
       border: 1px solid var(--border-card);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 0.82rem;
+      border-radius: 10px;
+      padding: 0 12px;
+      min-height: var(--tap);
+      font-size: 16px;
       outline: none;
       width: 100%;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
+    .loc-select:focus, .input-group select:focus, .input-group input:focus, #backup-text:focus { border-color: var(--neon-cyan); box-shadow: var(--glow-cyan); }
+    .loc-select { flex: 1; }
     .loc-select option, .input-group select option { background: #071526; color: #fff; }
+    #backup-text { padding: 10px 12px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; resize: vertical; margin-bottom: 8px; }
 
-    /* Score Gauge */
     .score-section { display: flex; flex-direction: column; align-items: center; margin: 4px 0 6px; }
-    .gauge-box { width: 114px; height: 114px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .gauge-box { width: 120px; height: 120px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
     .score-val { font-size: 2.75rem; font-weight: 600; line-height: 1; margin-top: -2px; }
     .stars-val { font-size: 0.85rem; letter-spacing: 2px; margin-top: 3px; min-height: 14px; color: var(--gold-accent); }
     .label-val { font-size: 1.15rem; font-weight: 500; margin-top: 6px; }
 
-    /* Chart */
     .chart-container { position: relative; width: 100%; height: 214px; margin-top: 2px; touch-action: none; cursor: crosshair; }
-    .band-label { position: absolute; left: 8px; font-size: 0.62rem; font-weight: 700; color: rgba(255,255,255,0.6); pointer-events: none; }
+    .band-label { position: absolute; left: 8px; font-size: 0.62rem; font-weight: 700; color: rgba(255, 255, 255, 0.6); pointer-events: none; }
     .band-high { top: 22px; } .band-med { top: 82px; } .band-low { top: 142px; }
     #curve-svg { width: 100%; height: 100%; display: block; }
 
@@ -160,216 +226,128 @@
     .time-card {
       background: rgba(0, 0, 0, 0.22);
       border: 1px solid var(--border-card);
-      border-radius: 8px;
-      padding: 7px 4px;
+      border-radius: 10px;
+      padding: 10px 4px;
+      min-height: 46px;
       margin-bottom: 6px;
       cursor: pointer;
       color: #fff;
       transition: all 0.15s;
     }
-    .time-card.active-window {
-      background: #ffffff !important;
-      color: #071526 !important;
-      border-color: #ffffff !important;
-      font-weight: 600;
-      box-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
-    }
+    .time-card:active { transform: scale(0.97); }
+    .time-card.active-window { background: #ffffff !important; color: #071526 !important; border-color: #ffffff !important; font-weight: 600; box-shadow: 0 0 14px rgba(255, 255, 255, 0.45); }
     .time-card.active-window .day-offset { color: #555555 !important; }
     .time-card-text { font-size: 0.85rem; font-weight: 500; }
     .day-offset { display: block; font-size: 0.62rem; color: var(--text-muted); font-style: italic; }
 
-    .tide-panel { margin: 6px 16px 12px; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 12px; backdrop-filter: blur(12px); }
-    .tide-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.75rem; color: #90caf9; text-transform: uppercase; font-weight: 600; }
-    .tide-diff-badge { background: rgba(0, 229, 255, 0.12); color: var(--neon-cyan); border: 1px solid rgba(0, 229, 255, 0.25); padding: 2px 8px; border-radius: 12px; font-size: 0.68rem; }
-    .tide-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.82rem; }
-    .tide-item { background: rgba(0, 0, 0, 0.2); padding: 6px 8px; border-radius: 6px; display: flex; justify-content: space-between; border: 1px solid rgba(255,255,255,0.06); }
+    .tide-panel { margin: 6px 16px 12px; padding: 12px; }
+    .tide-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.75rem; color: #90caf9; text-transform: uppercase; font-weight: 600; gap: 8px; }
+    .tide-diff-badge { background: rgba(0, 229, 255, 0.12); color: var(--neon-cyan); border: 1px solid rgba(0, 229, 255, 0.25); padding: 3px 8px; border-radius: 12px; font-size: 0.66rem; text-transform: none; text-align: right; }
+    .tide-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.85rem; }
+    .tide-item { background: rgba(0, 0, 0, 0.2); padding: 9px 10px; border-radius: 8px; display: flex; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.06); }
     .tide-type { font-weight: 600; color: #90caf9; }
-    .burley-box { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); display: none; }
+    .burley-box { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); display: none; }
     .burley-box.show { display: block; }
     .burley-title { font-size: 0.72rem; color: var(--neon-green); font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
-    .burley-item { font-size: 0.8rem; margin-bottom: 4px; display: flex; justify-content: space-between; background: rgba(0, 255, 136, 0.1); border: 1px solid rgba(0, 255, 136, 0.25); padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+    .burley-item { font-size: 0.82rem; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; min-height: 46px; background: rgba(0, 255, 136, 0.1); border: 1px solid rgba(0, 255, 136, 0.25); padding: 8px 10px; border-radius: 10px; cursor: pointer; }
 
-    /* Routing UI */
+    /* ---------- Trip planner ---------- */
     .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-    .input-group label { display: block; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 500; }
+    .input-group label.lbl { display: block; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 500; }
 
-    .spots-list {
-      max-height: 125px;
-      overflow-y: auto;
-      background: rgba(0, 0, 0, 0.25);
-      border: 1px solid var(--border-card);
-      border-radius: 8px;
-      padding: 6px;
-      margin-bottom: 8px;
-    }
-    .spots-list label {
-      display: flex !important;
-      flex-direction: row !important;
-      justify-content: flex-start !important;
-      align-items: center !important;
-      gap: 10px !important;
-      padding: 5px 6px;
-      margin-bottom: 2px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.82rem;
-      color: #fff;
-      transition: background 0.15s;
-    }
-    .spots-list label:hover { background: rgba(255, 255, 255, 0.06); }
-    .spots-list input[type="checkbox"] {
-      width: 16px;
-      height: 16px;
-      margin: 0 !important;
-      accent-color: var(--neon-green);
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-    .spots-list label span {
-      flex-grow: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .spot-custom-badge {
-      font-size: 0.65rem;
-      background: rgba(0, 229, 255, 0.2);
-      color: var(--neon-cyan);
-      padding: 1px 6px;
-      border-radius: 8px;
-      margin-left: 6px;
-    }
+    .spots-list { max-height: 190px; overflow-y: auto; -webkit-overflow-scrolling: touch; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-card); border-radius: 10px; padding: 6px; margin-bottom: 8px; }
+    .spots-list label { display: flex; flex-direction: row; align-items: center; gap: 12px; padding: 0 8px; min-height: 46px; margin-bottom: 2px; border-radius: 8px; cursor: pointer; font-size: 0.88rem; color: #fff; transition: background 0.15s; }
+    .spots-list label:active { background: rgba(255, 255, 255, 0.08); }
+    .spots-list input[type="checkbox"], .check-item input[type="checkbox"] { width: 24px; height: 24px; margin: 0; accent-color: var(--neon-green); cursor: pointer; flex-shrink: 0; }
+    .spots-list label span.nm { flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .spot-custom-badge { font-size: 0.65rem; background: rgba(0, 229, 255, 0.2); color: var(--neon-cyan); padding: 2px 7px; border-radius: 8px; margin-left: 6px; }
 
-    /* Map Containers with Nautical Dark Filter */
-    #map, #map-creator {
-      width: 100%;
-      height: 225px;
-      border-radius: 8px;
-      margin: 8px 0;
-      background: #0a1e36;
-      z-index: 1;
-      border: 1px solid var(--border-card);
-      overflow: hidden;
-    }
-    #map-creator { height: 205px; }
+    #map, #map-creator { width: 100%; height: 240px; border-radius: 12px; margin: 8px 0; background: #0a1e36; z-index: 1; border: 1px solid var(--border-card); overflow: hidden; }
+    #map-creator { height: 215px; }
     .leaflet-tile-pane { filter: brightness(0.92) contrast(1.08) saturate(1.15); }
+    .leaflet-control-attribution { font-size: 9px !important; background: rgba(7, 21, 38, 0.7) !important; color: #aac !important; }
+    .leaflet-control-attribution a { color: #8cf !important; }
+    .map-offline { height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; }
+    .map-tools { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+    .map-tools .tip { font-size: 0.68rem; color: var(--text-muted); flex: 1 1 100%; }
+    .node-toggle { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-muted); min-height: 40px; }
+    .node-toggle input { width: 20px; height: 20px; accent-color: var(--neon-cyan); }
 
-    .route-results {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      text-align: center;
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid var(--border-card);
-      padding: 10px 6px;
-      border-radius: 8px;
-      font-size: 0.8rem;
-      font-weight: 600;
-    }
-    .timeline-box { margin-top: 8px; background: rgba(0, 0, 0, 0.3); padding: 12px; border-radius: 8px; border: 1px solid var(--border-card); border-left: 3px solid var(--neon-cyan); }
-    .tl-row { display: flex; align-items: flex-start; margin-bottom: 10px; }
+    .route-results { display: grid; grid-template-columns: 1fr 1fr 1.25fr; text-align: center; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-card); padding: 12px 6px; border-radius: 12px; font-size: 0.86rem; font-weight: 600; gap: 4px; }
+    .route-results .k { color: var(--text-muted); font-size: 0.64rem; margin-bottom: 2px; font-weight: 500; }
+
+    /* Fuel states: ok -> warn (near full tank) -> danger (not enough fuel) */
+    .fuel-wrap { margin-top: 8px; }
+    .fuel-bar { height: 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.1); overflow: hidden; border: 1px solid var(--border-card); }
+    .fuel-fill { height: 100%; width: 0; border-radius: 8px; background: var(--neon-green); transition: width 0.4s ease, background 0.3s; }
+    .fuel-msg { margin-top: 8px; padding: 10px 12px; border-radius: 10px; font-size: 0.8rem; font-weight: 600; display: none; line-height: 1.35; }
+    .fuel-wrap.warn .fuel-fill { background: var(--amber); }
+    .fuel-wrap.warn .fuel-msg { display: block; background: rgba(255, 179, 0, 0.14); border: 1px solid rgba(255, 179, 0, 0.5); color: var(--amber); }
+    .fuel-wrap.danger .fuel-fill { background: var(--danger); }
+    .fuel-wrap.danger .fuel-msg { display: block; background: rgba(255, 82, 82, 0.16); border: 1px solid rgba(255, 82, 82, 0.6); color: #ff8a80; animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 rgba(255, 82, 82, 0); } 50% { box-shadow: 0 0 14px rgba(255, 82, 82, 0.55); } }
+    .c-ok { color: var(--neon-green); } .c-warn { color: var(--amber); } .c-danger { color: var(--danger); }
+
+    .timeline-box { margin-top: 8px; background: rgba(0, 0, 0, 0.3); padding: 14px 12px; border-radius: 12px; border: 1px solid var(--border-card); border-left: 3px solid var(--neon-cyan); }
+    .tl-row { display: flex; align-items: flex-start; margin-bottom: 12px; }
     .tl-row:last-child { margin-bottom: 0; }
-    .tl-time { width: 68px; font-weight: 700; font-size: 0.82rem; color: var(--neon-cyan); flex-shrink: 0; }
-    .tl-desc { font-size: 0.75rem; color: #fff; padding-left: 10px; border-left: 1px solid rgba(255, 255, 255, 0.15); line-height: 1.35; }
-    .tl-desc strong { color: #fff; font-size: 0.82rem; }
+    .tl-time { width: 82px; font-weight: 700; font-size: 0.84rem; color: var(--neon-cyan); flex-shrink: 0; }
+    .tl-time small { display: block; font-size: 0.62rem; font-weight: 500; color: var(--gold-accent); }
+    .tl-desc { font-size: 0.76rem; color: #fff; padding-left: 10px; border-left: 1px solid rgba(255, 255, 255, 0.15); line-height: 1.4; }
+    .tl-desc strong { color: #fff; font-size: 0.84rem; }
+    .tl-note { font-size: 0.74rem; color: var(--gold-accent); background: rgba(255, 209, 92, 0.1); border: 1px solid rgba(255, 209, 92, 0.35); padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; line-height: 1.35; }
+    .tl-empty { font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; }
 
-    .saved-spot-row { display: flex; justify-content: space-between; align-items: center; background: rgba(0, 0, 0, 0.2); padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.06); }
-    .btn-action { background: var(--neon-green); color: #042414; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 0.8rem; transition: opacity 0.15s; }
-    .btn-action:active { opacity: 0.8; }
-    .del-btn { background: #e53935; color: #fff; border: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; }
+    /* ---------- Vessel tab ---------- */
+    .saved-spot-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: rgba(0, 0, 0, 0.2); padding: 6px 6px 6px 12px; border-radius: 10px; margin-bottom: 6px; font-size: 0.82rem; border: 1px solid rgba(255, 255, 255, 0.06); }
+    .saved-spot-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .paste-box { margin-top: 4px; }
+    .paste-box summary { min-height: 44px; display: flex; align-items: center; font-size: 0.8rem; color: #90caf9; cursor: pointer; }
+    .warn-banner { display: none; margin-top: 8px; padding: 10px 12px; border-radius: 10px; font-size: 0.76rem; background: rgba(255, 179, 0, 0.14); border: 1px solid rgba(255, 179, 0, 0.5); color: var(--amber); line-height: 1.35; }
+    .warn-banner.show { display: block; }
 
-    /* Multi-Species Select Pills */
-    .species-pills-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 6px;
-      margin-bottom: 12px;
-    }
-    .species-pill {
-      background: rgba(0, 0, 0, 0.25);
-      border: 1px solid var(--border-card);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.15s;
-    }
-    .species-pill.selected {
-      background: rgba(0, 229, 255, 0.15);
-      border-color: var(--neon-cyan);
-      color: #fff;
-      box-shadow: var(--glow-cyan);
-    }
-    .species-pill .pill-chk {
-      width: 14px;
-      height: 14px;
-      border-radius: 3px;
-      border: 1px solid var(--border-card);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.65rem;
-    }
-    .species-pill.selected .pill-chk {
-      background: var(--neon-cyan);
-      color: #071526;
-      border-color: var(--neon-cyan);
-    }
+    /* ---------- Gear tab ---------- */
+    .species-pills-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
+    .species-pill { background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-card); border-radius: 12px; padding: 0 12px; min-height: var(--tap); font-size: 0.8rem; font-weight: 600; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.15s; }
+    .species-pill:active { transform: scale(0.97); }
+    .species-pill.selected { background: rgba(0, 229, 255, 0.15); border-color: var(--neon-cyan); color: #fff; box-shadow: var(--glow-cyan); }
+    .species-pill .pill-chk { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--border-card); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; flex-shrink: 0; }
+    .species-pill.selected .pill-chk { background: var(--neon-cyan); color: #071526; border-color: var(--neon-cyan); }
 
     .checklist-group { margin-bottom: 14px; }
     .checklist-group h4 { font-size: 0.76rem; color: #90caf9; text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid rgba(144, 202, 249, 0.15); padding-bottom: 4px; font-weight: 700; }
-    .check-item { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px; background: rgba(0, 0, 0, 0.2); padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); }
-    .check-item label { display: flex; align-items: center; gap: 10px; cursor: pointer; flex-grow: 1; }
-    .check-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--neon-green); }
+    .check-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.88rem; margin-bottom: 6px; background: rgba(0, 0, 0, 0.2); padding: 2px 6px 2px 12px; min-height: var(--tap); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); transition: background 0.15s; }
+    .check-item label { display: flex; align-items: center; gap: 12px; cursor: pointer; flex-grow: 1; min-height: 44px; }
+    .check-item:has(input:checked) { background: rgba(0, 255, 136, 0.08); }
+    .check-item:has(input:checked) span { opacity: 0.6; text-decoration: line-through; }
+    .gear-add { margin-bottom: 12px; background: rgba(0, 0, 0, 0.25); padding: 10px; border-radius: 12px; border: 1px solid var(--border-card); }
+    .gear-add .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
 
-    .bottom-nav {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      background: rgba(7, 21, 38, 0.94);
-      backdrop-filter: blur(16px);
-      display: flex;
-      justify-content: space-around;
-      padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
-      border-top: 1px solid var(--border-card);
-      z-index: 1000;
-    }
-    .nav-btn {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      color: rgba(220, 235, 252, 0.55);
-      font-size: 0.68rem;
-      gap: 3px;
-      width: 25%;
-      cursor: pointer;
-      border: none;
-      background: none;
-    }
+    /* ---------- Navigation, toast ---------- */
+    .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: rgba(7, 21, 38, 0.88); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); display: flex; justify-content: space-around; padding: 6px 0 calc(6px + var(--safe-bottom)); border-top: 1px solid var(--border-card); z-index: 1000; }
+    .nav-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; color: rgba(220, 235, 252, 0.55); font-size: 0.7rem; gap: 3px; width: 25%; min-height: 56px; cursor: pointer; border: none; background: none; transition: color 0.2s, transform 0.12s; }
+    .nav-btn:active { transform: scale(0.92); }
     .nav-btn.active { color: var(--neon-cyan); font-weight: 600; }
-    .nav-icon { font-size: 1.25rem; }
+    .nav-btn.active .nav-icon { filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.7)); }
+    .nav-icon { font-size: 1.4rem; }
+    #toast { position: fixed; left: 50%; bottom: calc(96px + var(--safe-bottom)); transform: translate(-50%, 20px); background: rgba(7, 21, 38, 0.96); border: 1px solid var(--neon-cyan); color: #fff; padding: 12px 18px; border-radius: 24px; font-size: 0.82rem; max-width: 90%; text-align: center; opacity: 0; pointer-events: none; transition: all 0.25s; z-index: 3000; box-shadow: var(--glow-cyan); }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
   </style>
 </head>
 <body>
   <div class="app-shell">
     <header>
       <h1 id="boat-title-header">Fish Activity</h1>
-      <button class="cal-trigger" id="cal-btn">📅 Date</button>
-      <input type="date" id="date-picker" />
+      <label class="cal-trigger">📅 Date<input type="date" id="date-picker" aria-label="Pick a date" /></label>
     </header>
 
     <div class="date-strip" id="date-strip"></div>
 
-    <!-- TAB 1: SOLUNAR & TIDES -->
+    <!-- ===================== TAB 1: SOLUNAR & TIDES ===================== -->
     <div id="tab-solunar" class="tab-content active">
       <div class="controls-row">
-        <button class="burley-btn" id="burley-btn">🪣 Burley Times</button>
-        <select class="loc-select" id="loc-select-main">
+        <button class="burley-btn" id="burley-btn" data-action="burley">🪣 Burley Times</button>
+        <select class="loc-select" id="loc-select-main" aria-label="Fishing area">
           <option value="mana">Mana Island</option>
           <option value="harbour">Wellington Harbour</option>
           <option value="south">South Coast</option>
@@ -379,14 +357,18 @@
       <div class="score-section">
         <div class="gauge-box">
           <svg class="gauge-svg" viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="8" stroke-dasharray="2 3.02" />
-            <circle id="gauge-ticks" cx="60" cy="60" r="48" fill="none" stroke="url(#scoreGrad)" stroke-width="8" stroke-dasharray="2 3.02" stroke-dashoffset="301.6" />
             <defs>
               <linearGradient id="scoreGrad" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0%" stop-color="#00e5ff" />
                 <stop offset="100%" stop-color="#00ff88" />
               </linearGradient>
+              <!-- The mask reveals only the first N% of the tick ring (this is what makes the gauge fill) -->
+              <mask id="gaugeMask">
+                <circle id="gauge-mask-arc" cx="60" cy="60" r="48" fill="none" stroke="#fff" stroke-width="14" stroke-dasharray="0 400" />
+              </mask>
             </defs>
+            <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="8" stroke-dasharray="2 3.02" />
+            <circle cx="60" cy="60" r="48" fill="none" stroke="url(#scoreGrad)" stroke-width="8" stroke-dasharray="2 3.02" mask="url(#gaugeMask)" />
           </svg>
           <div class="score-val" id="score-val">--</div>
           <div class="stars-val" id="stars-val"></div>
@@ -402,14 +384,8 @@
       </div>
 
       <div class="times-grid">
-        <div class="times-col">
-          <h3>Major Times</h3>
-          <div id="major-list"></div>
-        </div>
-        <div class="times-col">
-          <h3>Minor Times</h3>
-          <div id="minor-list"></div>
-        </div>
+        <div class="times-col"><h3>Major Times</h3><div id="major-list"></div></div>
+        <div class="times-col"><h3>Minor Times</h3><div id="minor-list"></div></div>
       </div>
 
       <div class="tide-panel">
@@ -425,7 +401,7 @@
       </div>
     </div>
 
-    <!-- TAB 2: TRIP PLANNER -->
+    <!-- ===================== TAB 2: TRIP PLANNER ===================== -->
     <div id="tab-route" class="tab-content">
       <div class="module-panel">
         <div class="module-header">
@@ -435,8 +411,8 @@
 
         <div class="input-grid">
           <div class="input-group">
-            <label>Departure Ramp (Start)</label>
-            <select id="ramp-start" onchange="syncEndRamp(); runRoutingAndTimeline()">
+            <label class="lbl" for="ramp-start">Departure Ramp (Start)</label>
+            <select id="ramp-start">
               <option value="evans">Evans Bay Marina</option>
               <option value="ngatitoa">Ngatitoa Domain (Paremata)</option>
               <option value="seatoun">Seatoun / Karaka Bays</option>
@@ -444,8 +420,8 @@
             </select>
           </div>
           <div class="input-group">
-            <label>Retrieval Ramp (End)</label>
-            <select id="ramp-end" onchange="runRoutingAndTimeline()">
+            <label class="lbl" for="ramp-end">Retrieval Ramp (End)</label>
+            <select id="ramp-end">
               <option value="evans">Evans Bay Marina</option>
               <option value="ngatitoa">Ngatitoa Domain (Paremata)</option>
               <option value="seatoun">Seatoun / Karaka Bays</option>
@@ -455,20 +431,26 @@
         </div>
 
         <div class="input-group">
-          <label>Select Target Spots (Visited in order; Includes Custom Marks):</label>
+          <label class="lbl">Target spots (visited top-to-bottom in list order; includes your custom marks):</label>
           <div class="spots-list" id="spots-checkboxes"></div>
         </div>
 
         <div id="map"></div>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <span style="font-size:0.68rem; color:var(--text-muted);">Tap map to add custom turn marks</span>
-          <button onclick="clearTempWaypoints()" style="background:none; border:1px solid rgba(255,255,255,0.25); color:#fff; border-radius:4px; padding:2px 7px; font-size:0.68rem; cursor:pointer;">Clear Turns</button>
+        <div class="map-tools">
+          <span class="tip">Tap the map to add a turn mark (inserted before the return leg).</span>
+          <button class="btn btn-ghost btn-small" data-action="undo-turn">↩ Undo Turn</button>
+          <button class="btn btn-ghost btn-small" data-action="clear-turns">Clear Turns</button>
+          <label class="node-toggle"><input type="checkbox" id="show-nodes" /> Show safe-water nodes</label>
         </div>
 
         <div class="route-results">
-          <div><div style="color:var(--text-muted); font-size:0.68rem;">DISTANCE</div><span id="route-dist" style="color:var(--neon-cyan);">0.0 nm</span></div>
-          <div><div style="color:var(--text-muted); font-size:0.68rem;">STEAM TIME</div><span id="route-time">0h 0m</span></div>
-          <div><div style="color:var(--text-muted); font-size:0.68rem;">FUEL REQUIRED</div><span id="route-fuel" style="color:var(--neon-green);">0 L</span></div>
+          <div><div class="k">DISTANCE</div><span id="route-dist" class="c-ok" style="color:var(--neon-cyan);">0.0 nm</span></div>
+          <div><div class="k">STEAM TIME</div><span id="route-time">0h 0m</span></div>
+          <div><div class="k">FUEL (incl. reserve)</div><span id="route-fuel" class="c-ok">0 L</span></div>
+        </div>
+        <div class="fuel-wrap" id="fuel-wrap">
+          <div class="fuel-bar"><div class="fuel-fill" id="fuel-fill"></div></div>
+          <div class="fuel-msg" id="fuel-msg"></div>
         </div>
       </div>
 
@@ -476,49 +458,44 @@
         <div class="module-header">⏱️ Solunar Mission Schedule</div>
         <div class="input-grid">
           <div class="input-group">
-            <label>Prep & Trailer Drive (Mins)</label>
-            <input type="number" id="prep-buffer" value="75" step="5" onchange="runRoutingAndTimeline()">
+            <label class="lbl" for="prep-buffer">Prep & Trailer Drive (Mins)</label>
+            <input type="number" inputmode="numeric" id="prep-buffer" value="75" step="5" min="0" max="360" />
           </div>
           <div class="input-group">
-            <label>Target Solunar Bite</label>
-            <select id="target-phase" onchange="runRoutingAndTimeline()">
-              <option value="major1">Major Window 1</option>
-              <option value="major2">Major Window 2</option>
-              <option value="minor1">Minor Window 1</option>
-              <option value="minor2">Minor Window 2</option>
-            </select>
+            <label class="lbl" for="target-phase">Target Solunar Bite</label>
+            <select id="target-phase"></select>
           </div>
         </div>
         <div class="timeline-box" id="timeline-output"></div>
       </div>
     </div>
 
-    <!-- TAB 3: VESSEL PROFILE & SPOT CREATOR -->
+    <!-- ===================== TAB 3: VESSEL, SPOTS, BACKUP ===================== -->
     <div id="tab-vessel" class="tab-content">
       <div class="module-panel">
         <div class="module-header">🚤 Vessel Profile</div>
-        <div class="input-group" style="margin-bottom:8px;">
-          <label>Vessel Name</label>
-          <input type="text" id="boat-name" value="Tewaiwhare" onchange="saveProfile()">
+        <div class="input-group" style="margin-bottom:10px;">
+          <label class="lbl" for="boat-name">Vessel Name</label>
+          <input type="text" id="boat-name" value="Tewaiwhare" maxlength="40" />
         </div>
         <div class="input-grid">
           <div class="input-group">
-            <label>Cruise Speed (Knots)</label>
-            <input type="number" id="boat-speed" value="20" min="4" max="55" onchange="saveProfile(); runRoutingAndTimeline()">
+            <label class="lbl" for="boat-speed">Cruise Speed (Knots)</label>
+            <input type="number" inputmode="decimal" id="boat-speed" value="22" min="4" max="55" />
           </div>
           <div class="input-group">
-            <label>Fuel Burn (L/hr)</label>
-            <input type="number" id="boat-burn" value="24" min="2" max="120" onchange="saveProfile(); runRoutingAndTimeline()">
+            <label class="lbl" for="boat-burn">Fuel Burn (L/hr)</label>
+            <input type="number" inputmode="decimal" id="boat-burn" value="12.5" step="0.5" min="2" max="120" />
           </div>
         </div>
-        <div class="input-grid">
+        <div class="input-grid" style="margin-bottom:0;">
           <div class="input-group">
-            <label>Tank Capacity (L)</label>
-            <input type="number" id="boat-tank" value="110" min="10" max="1000" onchange="saveProfile(); runRoutingAndTimeline()">
+            <label class="lbl" for="boat-tank">Tank Capacity (L)</label>
+            <input type="number" inputmode="decimal" id="boat-tank" value="50" min="10" max="1000" />
           </div>
           <div class="input-group">
-            <label>Safety Margin (%)</label>
-            <input type="number" id="boat-reserve" value="30" min="10" max="50" onchange="saveProfile(); runRoutingAndTimeline()">
+            <label class="lbl" for="boat-reserve">Safety Margin (%)</label>
+            <input type="number" inputmode="decimal" id="boat-reserve" value="30" min="10" max="50" />
           </div>
         </div>
       </div>
@@ -526,150 +503,201 @@
       <div class="module-panel">
         <div class="module-header">📍 Spot Creator & Library</div>
         <div class="input-group">
-          <label>Tap map to pinpoint mark, or type coords:</label>
-          <input type="text" id="new-spot-name" placeholder="Spot Name (e.g. Mana Dropoff)" style="margin: 4px 0 6px;">
-          <div style="display:flex; gap:6px;">
-            <input type="text" id="new-spot-coords" placeholder="-41.0850, 174.7720" style="flex-grow:1;">
-            <button class="btn-action" onclick="saveCustomSpot()">+ Save</button>
+          <label class="lbl">Tap the map to pinpoint a mark, or type coords:</label>
+          <input type="text" id="new-spot-name" placeholder="Spot name (e.g. Mana Dropoff)" maxlength="60" style="margin: 4px 0 8px;" />
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="new-spot-coords" placeholder="-41.0850, 174.7720" inputmode="text" style="flex-grow:1;" />
+            <button class="btn btn-primary" data-action="save-spot">+ Save</button>
           </div>
         </div>
         <div id="map-creator"></div>
         <div style="margin-top: 8px;">
-          <label style="font-size:0.72rem; color:var(--text-muted);">Custom Marks (Synced to Trip Planner):</label>
-          <div id="custom-spots-list" style="max-height: 120px; overflow-y: auto; margin-top: 4px;"></div>
+          <label class="lbl" style="font-size:0.72rem; color:var(--text-muted);">Custom marks (synced to Trip Planner):</label>
+          <div id="custom-spots-list" style="max-height: 200px; overflow-y: auto; margin-top: 6px;"></div>
         </div>
+      </div>
+
+      <div class="module-panel">
+        <div class="module-header">💾 Backup & Share</div>
+        <p class="hint">Saves your vessel settings, custom spots and custom gear to a small .json file. Send it to a mate, or keep it as a backup. Importing a friend's file never overwrites your vessel in Merge mode.</p>
+        <div class="btn-row">
+          <button class="btn btn-primary" data-action="export">⬆ Export</button>
+          <label class="btn btn-ghost file-btn">⬇ Import File<input type="file" id="import-file" accept=".json,application/json" /></label>
+        </div>
+        <div class="input-group" style="margin-bottom:8px;">
+          <label class="lbl" for="import-mode">When importing</label>
+          <select id="import-mode">
+            <option value="merge">Merge: keep my vessel, add new spots & gear</option>
+            <option value="replace">Replace: overwrite everything with the file</option>
+          </select>
+        </div>
+        <details class="paste-box" id="backup-details">
+          <summary>Copy / paste JSON instead</summary>
+          <textarea id="backup-text" rows="6" spellcheck="false" placeholder="Export fills this box. Paste a backup here to import it."></textarea>
+          <div class="btn-row">
+            <button class="btn btn-ghost" data-action="backup-copy">Copy</button>
+            <button class="btn btn-ghost" data-action="import-paste">Import Pasted</button>
+          </div>
+        </details>
+        <div class="warn-banner" id="storage-warning">⚠️ Your browser is blocking saved data (private mode or storage full). Everything works this session, but changes will be lost when you close the app. Use Export to keep a copy.</div>
       </div>
     </div>
 
-    <!-- TAB 4: GEAR CHECKLIST (MULTI-SPECIES TARGETING) -->
+    <!-- ===================== TAB 4: GEAR ===================== -->
     <div id="tab-gear" class="tab-content">
       <div class="module-panel">
         <div class="module-header">
           <span>🎣 Target Species (Select Multiple)</span>
-          <button onclick="resetChecks()" style="background:none; border:1px solid rgba(255,255,255,0.25); color:#fff; border-radius:4px; padding:2px 7px; font-size:0.68rem; cursor:pointer;">Uncheck Gear</button>
+          <button class="btn btn-ghost btn-small" data-action="reset-checks">Uncheck All</button>
         </div>
+        <div class="species-pills-grid" id="species-pills-container"></div>
 
-        <div class="species-pills-grid" id="species-pills-container">
-          <div class="species-pill selected" data-species="kingfish" onclick="toggleSpeciesPill('kingfish')">
-            <div class="pill-chk">✓</div>
-            <span>Kingfish</span>
-          </div>
-          <div class="species-pill selected" data-species="snapper" onclick="toggleSpeciesPill('snapper')">
-            <div class="pill-chk">✓</div>
-            <span>Snapper & Tarakihi</span>
-          </div>
-          <div class="species-pill" data-species="groper" onclick="toggleSpeciesPill('groper')">
-            <div class="pill-chk"></div>
-            <span>Hāpuku / Trench</span>
-          </div>
-          <div class="species-pill" data-species="pelagic" onclick="toggleSpeciesPill('pelagic')">
-            <div class="pill-chk"></div>
-            <span>Kahawai / Tuna</span>
-          </div>
-        </div>
-
-        <div class="input-group" style="margin-bottom: 12px; background: rgba(0,0,0,0.25); padding: 8px; border-radius: 8px; border: 1px solid var(--border-card);">
-          <label style="color:#90caf9;">Add Custom Item to Category:</label>
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:6px;">
-            <input type="text" id="custom-gear-input" placeholder="Item name (e.g. Salt Ice)...">
-            <select id="custom-gear-category">
+        <div class="gear-add input-group">
+          <label class="lbl" style="color:#90caf9;">Add a custom item:</label>
+          <div class="two">
+            <input type="text" id="custom-gear-input" placeholder="Item (e.g. Salt Ice)" maxlength="80" />
+            <select id="custom-gear-category" aria-label="Category">
               <option value="safety">🛥️ Vessel & Safety</option>
               <option value="tackle">🎣 Target Tackle</option>
               <option value="extras">➕ General Extras</option>
             </select>
           </div>
-          <button class="btn-action" style="width:100%;" onclick="addCustomGear()">+ Add to Selected Category</button>
+          <button class="btn btn-primary" style="width:100%;" data-action="add-gear">+ Add Item</button>
         </div>
 
         <div id="checklist-render"></div>
       </div>
     </div>
 
-    <!-- Bottom Navigation -->
-    <div class="bottom-nav">
-      <button class="nav-btn active" onclick="switchTab('solunar', this)">
-        <span class="nav-icon">🌙</span><span>Solunar</span>
-      </button>
-      <button class="nav-btn" onclick="switchTab('route', this)">
-        <span class="nav-icon">🗺️</span><span>Trip Plan</span>
-      </button>
-      <button class="nav-btn" onclick="switchTab('vessel', this)">
-        <span class="nav-icon">🚤</span><span>Vessel</span>
-      </button>
-      <button class="nav-btn" onclick="switchTab('gear', this)">
-        <span class="nav-icon">📋</span><span>Gear</span>
-      </button>
-    </div>
+    <nav class="bottom-nav" aria-label="Main">
+      <button class="nav-btn active" data-action="tab" data-tab="solunar"><span class="nav-icon">🌙</span><span>Solunar</span></button>
+      <button class="nav-btn" data-action="tab" data-tab="route"><span class="nav-icon">🗺️</span><span>Trip Plan</span></button>
+      <button class="nav-btn" data-action="tab" data-tab="vessel"><span class="nav-icon">🚤</span><span>Vessel</span></button>
+      <button class="nav-btn" data-action="tab" data-tab="gear"><span class="nav-icon">📋</span><span>Gear</span></button>
+    </nav>
   </div>
+  <div id="toast" role="status" aria-live="polite"></div>
 
   <script>
-    // =========================================================================
-    // 1. DATA & NAUTICAL ROUTING CHANNELS
-    // =========================================================================
-    const LOCATIONS = {
-      mana: { name: 'Mana Island', lat: -41.0880, lon: 174.7810, lunitidalHighHrs: 9.15, diffText: 'Tide: +4h 15m vs Harbour (Strong Flow)', currentFactor: 1.15 },
-      harbour: { name: 'Wellington Harbour', lat: -41.2866, lon: 174.8300, lunitidalHighHrs: 4.90, diffText: 'Tide: Ref Port (Moderate Flow)', currentFactor: 1.00 },
-      south: { name: 'South Coast', lat: -41.3520, lon: 174.7750, lunitidalHighHrs: 4.15, diffText: 'Tide: -45m vs Harbour (Strait Rip)', currentFactor: 1.10 }
-    };
+  (function () {
+    'use strict';
 
-    const RAMPS = {
-      evans:    { name: 'Evans Bay Marina', lat: -41.3039, lon: 174.8038, zone: 'inner_harbour' },
-      seatoun:  { name: 'Seatoun / Karaka Bays', lat: -41.3185, lon: 174.8345, zone: 'outer_harbour' },
-      seaview:  { name: 'Seaview Marina (Lowry Bay)', lat: -41.2582, lon: 174.9042, zone: 'inner_harbour' },
-      ngatitoa: { name: 'Ngatitoa Domain (Paremata)', lat: -41.1008, lon: 174.8625, zone: 'west' }
-    };
-
-    const CHANNEL_NODES = {
-      EVANS_MID:        [-41.2950, 174.8100],
-      PT_HALSWELL_CLEAR:[-41.2750, 174.8280],
-      SOMES_SOUTH:      [-41.2650, 174.8650],
-      WARD_ISLAND_WEST: [-41.2920, 174.8620],
-      FALCON_SHOALS:    [-41.3200, 174.8450],
-      PENCARROW_GATE:   [-41.3580, 174.8420],
-      SOUTH_COAST_OFF:  [-41.3720, 174.7500],
-      KARORI_ROCK:      [-41.3520, 174.6380],
-      TERAWHITI_CLEAR:  [-41.2800, 174.5880],
-      MAKARA_OFFSHORE:  [-41.2150, 174.6750],
-      TITAHI_GATE:      [-41.0820, 174.8200],
-      PORIRUA_ENTRANCE: [-41.0920, 174.8480]
-    };
-
-    const defaultSpots = [
-      { name: "Point Gordon / Ward Island", lat: -41.2950, lon: 174.8550, zone: 'outer_harbour' },
-      { name: "Barrett Reef", lat: -41.3390, lon: 174.8380, zone: 'outer_harbour' },
-      { name: "Pencarrow Head", lat: -41.3660, lon: 174.8480, zone: 'south' },
-      { name: "Sinclair Head / Red Rocks", lat: -41.3720, lon: 174.7150, zone: 'south' },
-      { name: "Mana Bridge / Pascoe Bank", lat: -41.0950, lon: 174.8050, zone: 'west' },
-      { name: "Mana Trench", lat: -41.0780, lon: 174.7450, zone: 'west' },
-      { name: "Hunters Bank", lat: -41.0350, lon: 174.7950, zone: 'west' },
-      { name: "Makara Foul", lat: -41.2150, lon: 174.6850, zone: 'west_south' }
-    ];
-
-    let customSpots = JSON.parse(localStorage.getItem('custom_spots_v4') || '[]');
-    let allSpots = [...defaultSpots, ...customSpots];
-    let checkedSpotNames = new Set([defaultSpots[0].name]);
-    let tempWaypoints = [];
-
-    let currentLocKey = 'mana';
-    let selectedDate = new Date();
-    selectedDate.setHours(12, 0, 0, 0);
-
-    let activeWindow = null;
-    let showBurleyMode = false;
-    let scrubHour = null;
-    let currentData = null;
-
-    let map = null, polyline = null, markers = [];
-    let creatorMap = null, creatorMarker = null, creatorSavedPins = [], pickedLatLng = null;
-
-    let selectedSpecies = JSON.parse(localStorage.getItem('selected_species_v1') || '["kingfish", "snapper"]');
-
-    // =========================================================================
-    // 2. OFFLINE ASTRONOMY & TIDAL ENGINE
-    // =========================================================================
+    // =====================================================================
+    // 0. SMALL HELPERS
+    // =====================================================================
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const num = (v, fallback) => { const n = parseFloat(v); return Number.isFinite(n) ? n : fallback; };
+    const uid = (prefix) => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const RAD = Math.PI / 180;
     const DEG = 180 / Math.PI;
+    const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+    // =====================================================================
+    // 1. CONFIG & DATA  (beginner-friendly: tweak coordinates and presets here)
+    // =====================================================================
+    const APP_ID = 'wellington-fishing-mission-control';
+
+    const CONFIG = {
+      MAJOR_HALF_WIDTH_HRS: 1.25,   // a Major window is the transit time +/- this many hours
+      MINOR_HALF_WIDTH_HRS: 0.75,   // a Minor window is moonrise/moonset +/- this many hours
+      FUEL_WARN_PCT: 85,            // fuel bar turns amber when the trip needs more than this % of the tank
+      // Soft limits used to warn when a custom spot is outside the Wellington region (router assumes Wellington waters)
+      REGION: { latMin: -41.6, latMax: -40.9, lonMin: 174.4, lonMax: 175.1 }
+    };
+
+    // localStorage keys. The *_v4 / _v6 names are kept so existing saved data keeps working.
+    const KEYS = {
+      spots: 'custom_spots_v4',
+      profile: 'vessel_profile_v6',
+      gearCustom: 'custom_gear_categorized_v4',
+      gearChecked: 'checked_gear_v5',
+      gearCheckedLegacy: 'checked_gear_v4',
+      species: 'selected_species_v1',
+      plan: 'trip_plan_v1'
+    };
+
+    // ---- Fishing areas for the solunar/tide engine ----
+    // lunitidalHighHrs = hours from moon transit to local high water.
+    const LOCATIONS = {
+      mana:    { name: 'Mana Island',        lat: -41.0880, lon: 174.7810, lunitidalHighHrs: 9.15, diffText: 'Tide: +4h 15m vs Harbour (Strong Flow)', currentFactor: 1.15 },
+      harbour: { name: 'Wellington Harbour', lat: -41.2866, lon: 174.8300, lunitidalHighHrs: 4.90, diffText: 'Tide: Ref Port (Moderate Flow)',         currentFactor: 1.00 },
+      south:   { name: 'South Coast',        lat: -41.3520, lon: 174.7750, lunitidalHighHrs: 4.15, diffText: 'Tide: -45m vs Harbour (Strait Rip)',     currentFactor: 1.10 }
+    };
+
+    // ---- Boat ramps (add a new ramp here AND an <option> in both ramp <select>s in the HTML) ----
+    const RAMPS = {
+      evans:    { name: 'Evans Bay Marina',          lat: -41.3065, lon: 174.8015 },
+      seatoun:  { name: 'Seatoun / Karaka Bays',     lat: -41.3190, lon: 174.8310 },
+      seaview:  { name: 'Seaview Marina (Lowry Bay)', lat: -41.2490, lon: 174.9030 },
+      ngatitoa: { name: 'Ngatitoa Domain (Paremata)', lat: -41.0990, lon: 174.8660 }
+    };
+
+    // ---- Built-in fishing spots (ids must stay unique and never change) ----
+    const DEFAULT_SPOTS = [
+      { id: 'd1', name: 'Point Gordon / Ward Island', lat: -41.2950, lon: 174.8550 },
+      { id: 'd2', name: 'Barrett Reef',               lat: -41.3454, lon: 174.8369 },
+      { id: 'd3', name: 'Pencarrow Head',             lat: -41.3660, lon: 174.8480 },
+      { id: 'd4', name: 'Sinclair Head / Red Rocks',  lat: -41.3623, lon: 174.7165 },
+      { id: 'd5', name: 'Mana Bridge / Pascoe Bank',  lat: -41.0950, lon: 174.8050 },
+      { id: 'd6', name: 'Mana Trench',                lat: -41.0680, lon: 174.7320 },
+      { id: 'd7', name: 'Hunters Bank',               lat: -41.0280, lon: 174.8100 },
+      { id: 'd8', name: 'Makara Foul',                lat: -41.2180, lon: 174.6750 }
+    ];
+
+    // =====================================================================
+    // 2. SAFE STORAGE  (never throws; falls back to memory if Safari blocks localStorage)
+    // =====================================================================
+    const Store = {
+      available: true,
+      mem: {},
+      init() {
+        try { localStorage.setItem('__probe', '1'); localStorage.removeItem('__probe'); }
+        catch (e) { this.available = false; }
+      },
+      get(key, fallback) {
+        try {
+          const raw = this.available ? localStorage.getItem(key) : this.mem[key];
+          if (raw === null || raw === undefined) return fallback;
+          const val = JSON.parse(raw);
+          return val === null ? fallback : val;
+        } catch (e) { return fallback; }      // corrupted JSON -> use fallback instead of crashing the app
+      },
+      set(key, value) {
+        const raw = JSON.stringify(value);
+        this.mem[key] = raw;                   // memory copy is the safety net
+        if (!this.available) { UI.storageWarning(true); return false; }
+        try { localStorage.setItem(key, raw); return true; }
+        catch (e) { this.available = false; UI.storageWarning(true); return false; }
+      }
+    };
+    Store.init();
+
+    // =====================================================================
+    // 3. APP STATE  (in-memory is the source of truth; storage is only a mirror)
+    // =====================================================================
+    const state = {
+      locKey: 'mana',
+      date: (() => { const d = new Date(); d.setHours(12, 0, 0, 0); return d; })(),
+      activeWindow: null,
+      burley: false,
+      scrubHour: null,
+      data: null,              // latest solunar result
+      lastPlan: null,          // latest route plan
+      profile: null,
+      customSpots: [],         // [{id,name,lat,lon}]
+      selectedSpotIds: new Set(['d1']),
+      tempWaypoints: [],       // map-tapped turn marks (not saved)
+      plan: { start: 'evans', end: 'evans', phase: 'major1', prep: 75 },
+      species: ['kingfish', 'snapper'],
+      customGear: [],          // [{id,text,category}]
+      gearChecked: {}          // { key: true }
+    };
+
+    // =====================================================================
+    // 4. OFFLINE ASTRONOMY & TIDAL ENGINE  (zero dependencies - unchanged maths)
+    // =====================================================================
     function getMoonEphemeris(date) {
       const jd = date.getTime() / 86400000 + 2440587.5;
       const d = jd - 2451545.0;
@@ -716,6 +744,7 @@
       const stepMins = 5;
       let prevHA = null, prevAlt = null;
 
+      // Scan from 6h BEFORE midnight to 6h AFTER the next midnight so windows that straddle the day edge are found.
       for (let m = -360; m <= 1800; m += stepMins) {
         const t = new Date(dayStart.getTime() + m * 60000);
         const e = getMoonEphemeris(t);
@@ -728,16 +757,16 @@
         ) * DEG;
 
         if (prevHA !== null) {
-          if (prevHA < 0 && ha >= 0 && Math.abs(ha - prevHA) < 30) {
+          if (prevHA < 0 && ha >= 0 && Math.abs(ha - prevHA) < 30) {               // upper transit (moon overhead)
             const frac = -prevHA / (ha - prevHA);
             majors.push(new Date(t.getTime() - (1 - frac) * stepMins * 60000));
           }
-          if (prevHA > 90 && ha < -90) {
+          if (prevHA > 90 && ha < -90) {                                           // lower transit (moon underfoot)
             const diff = (180 - prevHA) + (ha + 180);
             const frac = (180 - prevHA) / diff;
             majors.push(new Date(t.getTime() - (1 - frac) * stepMins * 60000));
           }
-          const h0 = -0.5;
+          const h0 = -0.5;                                                         // moonrise / moonset
           if ((prevAlt < h0 && alt >= h0) || (prevAlt >= h0 && alt < h0)) {
             const frac = (h0 - prevAlt) / (alt - prevAlt);
             minors.push(new Date(t.getTime() - (1 - frac) * stepMins * 60000));
@@ -747,18 +776,19 @@
         prevAlt = alt;
       }
 
+      // Tide events derived from every moon transit. Duplicates are only merged if they are the SAME type
+      // (the old version could wrongly drop a HIGH because a LOW was nearby).
       const tides = [];
-      majors.forEach(transitTime => {
+      majors.forEach((transitTime) => {
         const highTime = new Date(transitTime.getTime() + loc.lunitidalHighHrs * 3600000);
         tides.push({ time: new Date(highTime.getTime() - 6.21 * 3600000), type: 'LOW' });
         tides.push({ time: highTime, type: 'HIGH' });
         tides.push({ time: new Date(highTime.getTime() + 6.21 * 3600000), type: 'LOW' });
       });
-
       tides.sort((a, b) => a.time - b.time);
       const uniqueTides = [];
-      tides.forEach(td => {
-        if (!uniqueTides.some(u => Math.abs(u.time - td.time) < 2.5 * 3600000)) uniqueTides.push(td);
+      tides.forEach((td) => {
+        if (!uniqueTides.some((u) => u.type === td.type && Math.abs(u.time - td.time) < 3 * 3600000)) uniqueTides.push(td);
       });
 
       const burleyWindows = [];
@@ -771,7 +801,7 @@
         }
       }
 
-      const dayTides = uniqueTides.filter(t => t.time >= dayStart && t.time < dayEnd);
+      const dayTides = uniqueTides.filter((t) => t.time >= dayStart && t.time < dayEnd);
       return { score, majors, minors, dayTides, burleyWindows, dayStart, dayEnd, loc };
     }
 
@@ -787,15 +817,15 @@
       const tMs = data.dayStart.getTime() + hr * 3600000;
       let v = 18 + (data.score / 100) * 32;
 
-      data.majors.forEach(m => {
+      data.majors.forEach((m) => {
         const dt = (tMs - m.getTime()) / 3600000;
         if (Math.abs(dt) <= 3.1) v += (34 + (data.score / 100) * 16) * Math.pow(Math.max(0, Math.cos((Math.PI * dt) / 3.1)), 1.25);
       });
-      data.minors.forEach(m => {
+      data.minors.forEach((m) => {
         const dt = (tMs - m.getTime()) / 3600000;
         if (Math.abs(dt) <= 2.1) v += (20 + (data.score / 100) * 10) * Math.pow(Math.max(0, Math.cos((Math.PI * dt) / 2.1)), 1.35);
       });
-      data.burleyWindows.forEach(bw => {
+      data.burleyWindows.forEach((bw) => {
         const midFlow = (bw.start.getTime() + bw.end.getTime()) / 2;
         const dtFlow = (tMs - midFlow) / 3600000;
         if (Math.abs(dtFlow) <= 2.0) v += 4.5 * data.loc.currentFactor * Math.cos((Math.PI * dtFlow) / 4.0);
@@ -804,62 +834,85 @@
       return Math.max(6, Math.min(95, v));
     }
 
-    // =========================================================================
-    // 3. GRAPH-BASED NAUTICAL ROUTING (AVOIDS LAND)
-    // =========================================================================
+    // =====================================================================
+    // 5. MARITIME ROUTER  (graph of safe-water nodes + Dijkstra)
+    //
+    // How it works, in plain English:
+    //   1. Every point is put in a "basin" (a stretch of water where straight lines are safe).
+    //   2. Two points in the SAME basin are joined by a straight line.
+    //   3. Points in DIFFERENT basins are joined by the shortest path through the CHANNEL_NODES
+    //      network below (so we always go round Miramar, Pencarrow, Terawhiti and so on).
+    //   4. Every segment is finally checked against HAZARDS (islands) and bent around them.
+    // =====================================================================
+    // ===== ROUTER START =====
+    // Safe-water waypoints. Lat/Lon pairs. Edit carefully and check them on the chart.
+    const CHANNEL_NODES = {
+      EVANS_MID:         [-41.2950, 174.8100],
+      PT_HALSWELL_CLEAR: [-41.2750, 174.8280],
+      SOMES_SOUTH:       [-41.2650, 174.8650],
+      WARD_ISLAND_WEST:  [-41.2920, 174.8620],
+      FALCON_SHOALS:     [-41.3200, 174.8450],
+      PENCARROW_GATE:    [-41.3580, 174.8420],
+      SOUTH_COAST_OFF:   [-41.3720, 174.7500],
+      KARORI_ROCK:       [-41.3520, 174.6380],
+      TERAWHITI_CLEAR:   [-41.2800, 174.5880],
+      MAKARA_OFFSHORE:   [-41.2150, 174.6750],
+      TITAHI_GATE:       [-41.0820, 174.8200],
+      PORIRUA_ENTRANCE:  [-41.0920, 174.8480]
+    };
+
+    // Which nodes are joined by a safe straight stretch of water (undirected).
+    const CHANNEL_EDGES = [
+      ['EVANS_MID', 'PT_HALSWELL_CLEAR'],        // out of Evans Bay, north round Miramar
+      ['PT_HALSWELL_CLEAR', 'SOMES_SOUTH'],
+      ['PT_HALSWELL_CLEAR', 'WARD_ISLAND_WEST'],
+      ['SOMES_SOUTH', 'WARD_ISLAND_WEST'],       // Seaview <-> harbour mouth passes south of Somes Island
+      ['WARD_ISLAND_WEST', 'FALCON_SHOALS'],
+      ['FALCON_SHOALS', 'PENCARROW_GATE'],       // down to the harbour entrance
+      ['PENCARROW_GATE', 'SOUTH_COAST_OFF'],
+      ['SOUTH_COAST_OFF', 'KARORI_ROCK'],
+      ['KARORI_ROCK', 'TERAWHITI_CLEAR'],
+      ['TERAWHITI_CLEAR', 'MAKARA_OFFSHORE'],
+      ['MAKARA_OFFSHORE', 'TITAHI_GATE'],
+      ['TITAHI_GATE', 'PORIRUA_ENTRANCE']
+    ];
+
+    // Which nodes a point in each basin may join the network at. `when` (optional) adds a condition on (lat, lon).
+    const BASIN_ATTACH = {
+      evans_bay:     [{ node: 'EVANS_MID' }],
+      inner_harbour: [{ node: 'PT_HALSWELL_CLEAR' }, { node: 'SOMES_SOUTH' }, { node: 'WARD_ISLAND_WEST' }],
+      outer_harbour: [
+        { node: 'WARD_ISLAND_WEST' }, { node: 'FALCON_SHOALS' }, { node: 'PENCARROW_GATE' },
+        { node: 'PT_HALSWELL_CLEAR', when: (lat) => lat > -41.305 }   // only for spots north of Miramar's tip (never Seatoun)
+      ],
+      south:         [{ node: 'PENCARROW_GATE' }, { node: 'SOUTH_COAST_OFF' }, { node: 'KARORI_ROCK' }],
+      west_south:    [{ node: 'MAKARA_OFFSHORE' }, { node: 'TERAWHITI_CLEAR' }],
+      west:          [{ node: 'TITAHI_GATE' }, { node: 'MAKARA_OFFSHORE', when: (lat, lon) => lon < 174.79 }], // west of Mana Island
+      porirua_inner: [{ node: 'PORIRUA_ENTRANCE' }]
+    };
+
+    // Islands the router must never cut across. Straight legs that clip one are bent round it.
+    const HAZARDS = [
+      { name: 'Somes / Matiu Island', lat: -41.2575, lon: 174.8656, radiusNm: 0.7 },
+      { name: 'Mana Island',          lat: -41.0880, lon: 174.7810, radiusNm: 0.8 }
+    ];
+
+    // Rough zone rules (order matters - first match wins).
     function getSeaZone(lat, lon) {
-      if (lat > -41.15) return 'west';
-      if (lon < 174.72 && lat > -41.33) return 'west_south';
+      if (lon >= 174.84 && lat <= -41.07 && lat >= -41.13) return 'porirua_inner'; // inside Porirua Harbour (Paremata)
+      if (lat > -41.15) return 'west';                                             // Mana / Titahi / Plimmerton coast
+      if (lon < 174.72 && lat > -41.33) return 'west_south';                       // Makara / Terawhiti coast
       if (lat < -41.345) return 'south';
+      if (lon <= 174.822 && lat < -41.312) return 'south';                         // Lyall Bay, Island Bay, Owhiro
       if (lat >= -41.312 && lon <= 174.825 && lat <= -41.285) return 'evans_bay';
       if (lat >= -41.285 && lon <= 174.86) return 'lambton_harbour';
       if (lat >= -41.285 && lon > 174.86) return 'seaview_east';
       return 'outer_harbour';
     }
 
-    function resolveWaterChannel(p1, p2) {
-      const z1 = getSeaZone(p1[0], p1[1]);
-      const z2 = getSeaZone(p2[0], p2[1]);
-      const corridor = [];
-
-      if (z1 === 'evans_bay' && z2 !== 'evans_bay') {
-        corridor.push(CHANNEL_NODES.EVANS_MID, CHANNEL_NODES.PT_HALSWELL_CLEAR);
-      }
-      if (z1 === 'west' && Math.abs(p1[0] - (-41.1008)) < 0.015) {
-        corridor.push(CHANNEL_NODES.PORIRUA_ENTRANCE, CHANNEL_NODES.TITAHI_GATE);
-      }
-
-      if ((z1 === 'evans_bay' || z1 === 'lambton_harbour') && (z2 === 'outer_harbour' || z2 === 'south')) {
-        corridor.push(CHANNEL_NODES.WARD_ISLAND_WEST, CHANNEL_NODES.FALCON_SHOALS);
-        if (z2 === 'south') corridor.push(CHANNEL_NODES.PENCARROW_GATE);
-      } else if (z1 === 'outer_harbour' && z2 === 'south') {
-        corridor.push(CHANNEL_NODES.PENCARROW_GATE);
-      } else if (z1 === 'south' && (z2 === 'outer_harbour' || z2 === 'evans_bay')) {
-        corridor.push(CHANNEL_NODES.PENCARROW_GATE, CHANNEL_NODES.FALCON_SHOALS);
-        if (z2 === 'evans_bay') corridor.push(CHANNEL_NODES.PT_HALSWELL_CLEAR, CHANNEL_NODES.EVANS_MID);
-      } else if ((z1 === 'evans_bay' || z1 === 'outer_harbour') && z2 === 'west') {
-        corridor.push(CHANNEL_NODES.FALCON_SHOALS, CHANNEL_NODES.PENCARROW_GATE, CHANNEL_NODES.SOUTH_COAST_OFF, CHANNEL_NODES.KARORI_ROCK, CHANNEL_NODES.TERAWHITI_CLEAR, CHANNEL_NODES.MAKARA_OFFSHORE);
-      } else if (z1 === 'west' && (z2 === 'evans_bay' || z2 === 'outer_harbour')) {
-        corridor.push(CHANNEL_NODES.MAKARA_OFFSHORE, CHANNEL_NODES.TERAWHITI_CLEAR, CHANNEL_NODES.KARORI_ROCK, CHANNEL_NODES.SOUTH_COAST_OFF, CHANNEL_NODES.PENCARROW_GATE, CHANNEL_NODES.FALCON_SHOALS);
-        if (z2 === 'evans_bay') corridor.push(CHANNEL_NODES.PT_HALSWELL_CLEAR, CHANNEL_NODES.EVANS_MID);
-      }
-
-      if (z2 === 'evans_bay' && z1 !== 'evans_bay' && corridor[corridor.length - 1] !== CHANNEL_NODES.EVANS_MID) {
-        corridor.push(CHANNEL_NODES.PT_HALSWELL_CLEAR, CHANNEL_NODES.EVANS_MID);
-      }
-
-      return corridor;
-    }
-
-    function calculateWaterRoute(stops) {
-      if (stops.length < 2) return stops;
-      const full = [stops[0]];
-      for (let i = 0; i < stops.length - 1; i++) {
-        const waypoints = resolveWaterChannel(stops[i], stops[i + 1]);
-        waypoints.forEach(wp => full.push(wp));
-        full.push(stops[i + 1]);
-      }
-      return full;
+    function getBasin(p) {
+      const z = getSeaZone(p[0], p[1]);
+      return (z === 'lambton_harbour' || z === 'seaview_east') ? 'inner_harbour' : z;
     }
 
     function getNmDist(lat1, lon1, lat2, lon2) {
@@ -867,303 +920,450 @@
       const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * RAD) * Math.cos(lat2 * RAD) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
       return 3440.065 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
     }
+    const nmBetween = (a, b) => getNmDist(a[0], a[1], b[0], b[1]);
 
-    // =========================================================================
-    // 4. ZERO-API-KEY MARINE MAPS & TIMELINE CALCULATOR
-    // =========================================================================
-    function addMarineTileLayers(leafletMap) {
-      // Primary: Esri World Ocean Base & Reference (100% Free, No API Key, Bathymetry Contours)
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(leafletMap);
+    function attachNodes(p) {
+      const basin = getBasin(p);
+      const rules = BASIN_ATTACH[basin] || [];
+      const names = rules.filter((r) => !r.when || r.when(p[0], p[1])).map((r) => r.node);
+      if (names.length) return names;
+      // Unknown water: fall back to the 3 closest nodes
+      return Object.keys(CHANNEL_NODES).sort((a, b) => nmBetween(p, CHANNEL_NODES[a]) - nmBetween(p, CHANNEL_NODES[b])).slice(0, 3);
+    }
+
+    // Dijkstra over the node graph, with the two real points hooked in at their attach nodes.
+    function channelPath(a, b) {
+      const names = Object.keys(CHANNEL_NODES);
+      const adj = {};
+      names.forEach((n) => { adj[n] = []; });
+      CHANNEL_EDGES.forEach(([x, y]) => {
+        const w = nmBetween(CHANNEL_NODES[x], CHANNEL_NODES[y]);
+        adj[x].push([y, w]);
+        adj[y].push([x, w]);
+      });
+
+      const dist = {}, prev = {}, done = {};
+      names.forEach((n) => { dist[n] = Infinity; prev[n] = null; });
+      attachNodes(a).forEach((n) => { dist[n] = nmBetween(a, CHANNEL_NODES[n]); });
+
+      for (;;) {
+        let u = null;
+        names.forEach((n) => { if (!done[n] && dist[n] < Infinity && (u === null || dist[n] < dist[u])) u = n; });
+        if (u === null) break;
+        done[u] = true;
+        adj[u].forEach(([v, w]) => {
+          if (dist[u] + w < dist[v]) { dist[v] = dist[u] + w; prev[v] = u; }
+        });
+      }
+
+      let best = null, bestCost = Infinity;
+      attachNodes(b).forEach((n) => {
+        const cost = dist[n] + nmBetween(CHANNEL_NODES[n], b);
+        if (cost < bestCost) { bestCost = cost; best = n; }
+      });
+      if (best === null) return [];
+
+      const path = [];
+      for (let n = best; n !== null; n = prev[n]) path.unshift(CHANNEL_NODES[n]);
+      return path;
+    }
+
+    // Bend a straight segment around any island it would clip.
+    function avoidHazards(a, b) {
+      const out = [];
+      HAZARDS.forEach((h) => {
+        const c = [h.lat, h.lon];
+        // If we start or finish right next to the island (fishing beside it) do not detour.
+        if (nmBetween(a, c) < h.radiusNm || nmBetween(b, c) < h.radiusNm) return;
+
+        const k = Math.cos(h.lat * RAD) * 60;                       // flatten lon/lat into nautical miles
+        const A = [a[1] * k, a[0] * 60], B = [b[1] * k, b[0] * 60], C = [c[1] * k, c[0] * 60];
+        const dx = B[0] - A[0], dy = B[1] - A[1];
+        const len2 = dx * dx + dy * dy;
+        if (len2 === 0) return;
+        const t = ((C[0] - A[0]) * dx + (C[1] - A[1]) * dy) / len2;
+        if (t <= 0 || t >= 1) return;                               // closest approach is an endpoint, already outside the circle
+        const P = [A[0] + t * dx, A[1] + t * dy];
+        const off = [P[0] - C[0], P[1] - C[1]];
+        const d = Math.hypot(off[0], off[1]);
+        if (d >= h.radiusNm) return;                                // passes clear of the island
+
+        let ux, uy;
+        if (d < 1e-6) { const L = Math.sqrt(len2); ux = -dy / L; uy = dx / L; }  // dead-centre hit: go left of travel
+        else { ux = off[0] / d; uy = off[1] / d; }                  // otherwise pass on the side we were already on
+        const r = h.radiusNm * 1.35;
+        const W = [C[0] + ux * r, C[1] + uy * r];
+        out.push({ t, wp: [W[1] / 60, W[0] / k] });
+      });
+      out.sort((x, y) => x.t - y.t);
+      return out.map((o) => o.wp);
+    }
+
+    // One leg between two stops -> list of [lat, lon] points (inclusive of both ends).
+    function calculateLeg(a, b) {
+      const mid = (getBasin(a) === getBasin(b)) ? [] : channelPath(a, b);
+      const chain = [a].concat(mid, [b]);
+      const pts = [chain[0]];
+      for (let i = 0; i < chain.length - 1; i++) {
+        avoidHazards(chain[i], chain[i + 1]).forEach((wp) => pts.push(wp));
+        pts.push(chain[i + 1]);
+      }
+      // drop consecutive duplicates
+      return pts.filter((p, i) => i === 0 || p[0] !== pts[i - 1][0] || p[1] !== pts[i - 1][1]);
+    }
+    // ===== ROUTER END =====
+
+    // =====================================================================
+    // 6. TRIP PLAN: spots, route, fuel and reverse-engineered timeline
+    // =====================================================================
+    function allSpots() {
+      return DEFAULT_SPOTS.concat(state.customSpots.map((s) => ({ ...s, isCustom: true })));
+    }
+
+    function buildPlan() {
+      const startR = RAMPS[$('ramp-start').value] || RAMPS.evans;
+      const endR = RAMPS[$('ramp-end').value] || RAMPS.evans;
+      const spots = allSpots().filter((s) => state.selectedSpotIds.has(s.id));
+
+      const stops = [{ p: [startR.lat, startR.lon], kind: 'ramp', label: startR.name }];
+      spots.forEach((s) => stops.push({ p: [s.lat, s.lon], kind: 'spot', label: s.name }));
+      state.tempWaypoints.forEach((w, i) => stops.push({ p: [w.lat, w.lng], kind: 'turn', label: 'Turn ' + (i + 1) }));
+      stops.push({ p: [endR.lat, endR.lon], kind: 'ramp', label: endR.name });
+
+      const legs = [];
+      let totalNm = 0;
+      for (let i = 0; i < stops.length - 1; i++) {
+        const pts = calculateLeg(stops[i].p, stops[i + 1].p);
+        let nm = 0;
+        for (let j = 0; j < pts.length - 1; j++) nm += nmBetween(pts[j], pts[j + 1]);
+        legs.push({ pts, nm });
+        totalNm += nm;
+      }
+      const route = [];
+      legs.forEach((l, i) => (i === 0 ? l.pts : l.pts.slice(1)).forEach((p) => route.push(p)));
+
+      return {
+        startR, endR, stops, legs, route, totalNm,
+        firstLegNm: legs[0].nm,
+        firstTarget: stops[1].label,
+        hasTargets: spots.length + state.tempWaypoints.length > 0
+      };
+    }
+
+    function refreshRoute(opts) {
+      const fit = !!(opts && opts.fit);
+      state.lastPlan = buildPlan();
+      updateRouteStats(state.lastPlan);
+      drawRoute(state.lastPlan, fit);
+      updateTimeline();
+    }
+
+    function updateRouteStats(plan) {
+      const p = state.profile;
+      const tHrs = plan.totalNm / p.speed;
+      const totalMin = Math.round(tHrs * 60);                       // rounding minutes first avoids "1h 60m"
+      const reqFuel = Math.ceil(tHrs * p.burn * (1 + p.reserve / 100));
+      const pct = Math.round((reqFuel / p.tank) * 100);
+
+      $('route-dist').textContent = `${plan.totalNm.toFixed(1)} nm`;
+      $('route-time').textContent = `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`;
+
+      const level = pct > 100 ? 'danger' : (pct > CONFIG.FUEL_WARN_PCT ? 'warn' : 'ok');
+      const fuelEl = $('route-fuel');
+      fuelEl.textContent = `${reqFuel}L / ${p.tank}L`;
+      fuelEl.className = 'c-' + level;
+
+      const wrap = $('fuel-wrap');
+      wrap.className = 'fuel-wrap ' + level;
+      $('fuel-fill').style.width = clamp(pct, 2, 100) + '%';
+      const msg = $('fuel-msg');
+      if (level === 'danger') msg.textContent = `⛔ Not enough fuel: this trip needs ${reqFuel} L (with ${p.reserve}% reserve) but the tank holds ${p.tank} L. Cut a spot or refuel before launching.`;
+      else if (level === 'warn') msg.textContent = `⚠️ Tight on fuel: using ${pct}% of the tank including reserve. Check the gauge before leaving the ramp.`;
+      else msg.textContent = '';
+    }
+
+    // Timeline target dropdown shows the real times so you can see what you are choosing
+    function populatePhaseOptions(majs, mins) {
+      const sel = $('target-phase');
+      const defs = [
+        { id: 'major1', label: 'Major 1', t: majs[0] }, { id: 'major2', label: 'Major 2', t: majs[1] },
+        { id: 'minor1', label: 'Minor 1', t: mins[0] }, { id: 'minor2', label: 'Minor 2', t: mins[1] }
+      ];
+      sel.innerHTML = defs.map((d) =>
+        `<option value="${d.id}" ${d.t ? '' : 'disabled'}>${d.label}${d.t ? ' · ' + formatClock(d.t) : ' (none today)'}</option>`).join('');
+      let chosen = state.plan.phase;
+      if (!defs.find((d) => d.id === chosen && d.t)) {
+        const first = defs.find((d) => d.t);
+        chosen = first ? first.id : 'major1';
+      }
+      sel.value = chosen;
+      return defs.find((d) => d.id === chosen);
+    }
+
+    // Shows "Mon" under a time if it is not on the selected day (fixes the overnight roll-over confusion)
+    function tlTime(date) {
+      const same = date.toDateString() === state.date.toDateString();
+      const tag = same ? '' : `<small>${DAY_NAMES[date.getDay()]} ${date.getDate()}</small>`;
+      return `${formatClock(date)}${tag}`;
+    }
+
+    function updateTimeline() {
+      const out = $('timeline-output');
+      const data = state.data;
+      if (!data) return;
+      const plan = state.lastPlan || (state.lastPlan = buildPlan());
+
+      const majs = data.majors.filter((t) => t >= data.dayStart && t < data.dayEnd);
+      const mins = data.minors.filter((t) => t >= data.dayStart && t < data.dayEnd);
+      const phase = populatePhaseOptions(majs, mins);
+
+      if (!plan.hasTargets) {
+        out.innerHTML = '<div class="tl-empty">Tick at least one target spot (or tap the map to add a turn mark) and a launch schedule will appear here.</div>';
+        return;
+      }
+
+      const isMajor = phase.id.indexOf('major') === 0;
+      const tgt = phase.t || new Date(data.dayStart.getTime() + 8 * 3600000);
+      const winOffsetMs = (isMajor ? CONFIG.MAJOR_HALF_WIDTH_HRS : CONFIG.MINOR_HALF_WIDTH_HRS) * 3600000;
+      const legHrs = plan.firstLegNm / state.profile.speed;
+
+      // Everything is plain millisecond maths, so an early-morning peak simply lands on the previous day's clock.
+      const arr = new Date(tgt.getTime() - winOffsetMs);
+      const launch = new Date(arr.getTime() - legHrs * 3600000);
+      const wake = new Date(launch.getTime() - state.plan.prep * 60000);
+
+      const overnight = wake < data.dayStart;
+      const note = overnight
+        ? `<div class="tl-note">🌙 This bite is early: you wake the evening before (${DAY_NAMES[wake.getDay()]}). Pack the boat tonight.</div>`
+        : '';
+      const fallbackNote = phase.t ? '' : '<div class="tl-note">No solunar peak found for this day, using 8:00 am as a placeholder.</div>';
+
+      out.innerHTML = `${note}${fallbackNote}
+        <div class="tl-row"><div class="tl-time">${tlTime(wake)}</div><div class="tl-desc"><strong>Wake Up & Gear Check</strong><br>Check bungs, hitch trailer, depart for ${esc(plan.startR.name)}.</div></div>
+        <div class="tl-row"><div class="tl-time">${tlTime(launch)}</div><div class="tl-desc"><strong>Launch Vessel</strong><br>Steam ${plan.firstLegNm.toFixed(1)} nm (${Math.round(legHrs * 60)} mins) to ${esc(plan.firstTarget)}.</div></div>
+        <div class="tl-row"><div class="tl-time">${tlTime(arr)}</div><div class="tl-desc"><strong>Lines In Water</strong><br>Arrival synchronized with the opening of the solunar bite window.</div></div>
+        <div class="tl-row"><div class="tl-time">${tlTime(tgt)}</div><div class="tl-desc"><strong>Peak Activity</strong><br>Maximum solunar phase peak.</div></div>`;
+    }
+
+    // ---------------------------------------------------------------------
+    // 6b. Maps (Leaflet - guarded so the app still works with no signal)
+    // ---------------------------------------------------------------------
+    let map = null, routeLayer = null, nodeLayer = null;
+    let creatorMap = null, creatorMarker = null, creatorPinLayer = null, pickedLatLng = null;
+
+    const leafletReady = () => typeof L !== 'undefined';
+
+    function showMapOffline(elId) {
+      const el = $(elId);
+      if (el && !el.dataset.off) {
+        el.dataset.off = '1';
+        el.innerHTML = '<div class="map-offline">🛰️ Map tiles need an internet connection.<br>Distance, fuel and the timeline below still work offline.</div>';
+      }
+    }
+
+    function addMarineTileLayers(m) {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(m);
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 13,
-        opacity: 0.88
-      }).addTo(leafletMap);
-      // Overlay: OpenSeaMap Nautical Marks (Buoys, Beacons, Lights)
-      L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
-        maxZoom: 18
-      }).addTo(leafletMap);
+        maxZoom: 18, maxNativeZoom: 13, opacity: 0.88, attribution: 'Esri'
+      }).addTo(m);
+      L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18, attribution: 'OpenSeaMap' }).addTo(m);
+      L.control.attribution({ prefix: false, position: 'bottomleft' }).addTo(m);
     }
 
     function ensureRouteMap() {
-      const mapEl = document.getElementById('map');
-      if (mapEl && !map) {
+      if (!leafletReady()) { showMapOffline('map'); refreshRoute(); return; }
+      if (!map) {
         map = L.map('map', { zoomControl: true, attributionControl: false }).setView([-41.29, 174.83], 11);
         addMarineTileLayers(map);
+        routeLayer = L.layerGroup().addTo(map);
+        nodeLayer = L.layerGroup();
         map.on('click', (e) => {
-          tempWaypoints.push(e.latlng);
-          runRoutingAndTimeline();
+          state.tempWaypoints.push(e.latlng);
+          refreshRoute();                          // no auto-zoom: the map must not jump while you are tapping
         });
       }
-      if (map) {
-        setTimeout(() => {
-          map.invalidateSize();
-          runRoutingAndTimeline();
-        }, 80);
-      }
+      setTimeout(() => { map.invalidateSize(); refreshRoute({ fit: true }); }, 80);
+    }
+
+    function drawRoute(plan, fit) {
+      if (!map || !routeLayer) return;
+      routeLayer.clearLayers();
+      L.polyline(plan.route, { color: '#00ff88', weight: 3.5, opacity: 0.95, dashArray: '7, 5' }).addTo(routeLayer);
+
+      plan.stops.forEach((s, i) => {
+        const isRamp = s.kind === 'ramp';
+        const isTurn = s.kind === 'turn';
+        L.circleMarker(s.p, {
+          radius: isRamp ? 8 : (isTurn ? 5 : 6.5),
+          color: isRamp ? '#ffd15c' : '#ffffff',
+          fillColor: isRamp ? '#ffd15c' : (isTurn ? '#b0bec5' : '#00e5ff'),
+          fillOpacity: 1,
+          weight: 2
+        }).bindTooltip(`${i === 0 ? 'Start: ' : (i === plan.stops.length - 1 ? 'End: ' : '')}${s.label}`, { direction: 'top' }).addTo(routeLayer);
+      });
+
+      if (fit) map.fitBounds(L.polyline(plan.route).getBounds(), { padding: [22, 22] });
+    }
+
+    function drawNodeLayer() {
+      if (!map || !nodeLayer) return;
+      nodeLayer.clearLayers();
+      Object.keys(CHANNEL_NODES).forEach((name) => {
+        L.circleMarker(CHANNEL_NODES[name], { radius: 4, color: '#ffb300', fillColor: '#ffb300', fillOpacity: 0.9, weight: 1 })
+          .bindTooltip(name, { direction: 'right' }).addTo(nodeLayer);
+      });
+      HAZARDS.forEach((h) => {
+        L.circle([h.lat, h.lon], { radius: h.radiusNm * 1852, color: '#ff5252', weight: 1, fillOpacity: 0.12 }).bindTooltip(h.name).addTo(nodeLayer);
+      });
     }
 
     function ensureCreatorMap() {
-      const creatorEl = document.getElementById('map-creator');
-      if (creatorEl && !creatorMap) {
+      if (!leafletReady()) { showMapOffline('map-creator'); return; }
+      if (!creatorMap) {
         creatorMap = L.map('map-creator', { zoomControl: true, attributionControl: false }).setView([-41.18, 174.78], 10);
         addMarineTileLayers(creatorMap);
-
+        creatorPinLayer = L.layerGroup().addTo(creatorMap);
         creatorMap.on('click', (e) => {
           pickedLatLng = e.latlng;
-          document.getElementById('new-spot-coords').value = `${pickedLatLng.lat.toFixed(4)}, ${pickedLatLng.lng.toFixed(4)}`;
+          $('new-spot-coords').value = `${pickedLatLng.lat.toFixed(4)}, ${pickedLatLng.lng.toFixed(4)}`;
           if (creatorMarker) creatorMap.removeLayer(creatorMarker);
-          creatorMarker = L.circleMarker(pickedLatLng, {
-            radius: 7,
-            color: '#ffd15c',
-            fillColor: '#00ff88',
-            fillOpacity: 1,
-            weight: 2
-          }).addTo(creatorMap);
+          creatorMarker = L.circleMarker(pickedLatLng, { radius: 8, color: '#ffd15c', fillColor: '#00ff88', fillOpacity: 1, weight: 2 }).addTo(creatorMap);
         });
       }
-      if (creatorMap) {
-        setTimeout(() => {
-          creatorMap.invalidateSize();
-          renderCreatorMapPins();
-        }, 80);
-      }
+      setTimeout(() => { creatorMap.invalidateSize(); renderCreatorPins(); }, 80);
     }
 
-    function renderCreatorMapPins() {
-      if (!creatorMap) return;
-      creatorSavedPins.forEach(p => creatorMap.removeLayer(p));
-      creatorSavedPins = [];
-      customSpots.forEach(s => {
-        const pin = L.circleMarker([s.lat, s.lon], {
-          radius: 5.5,
-          color: '#ffffff',
-          fillColor: '#00e5ff',
-          fillOpacity: 0.95,
-          weight: 1.5
-        }).bindTooltip(s.name, { direction: 'top' }).addTo(creatorMap);
-        creatorSavedPins.push(pin);
+    function renderCreatorPins() {
+      if (!creatorMap || !creatorPinLayer) return;
+      creatorPinLayer.clearLayers();
+      state.customSpots.forEach((s) => {
+        L.circleMarker([s.lat, s.lon], { radius: 6, color: '#ffffff', fillColor: '#00e5ff', fillOpacity: 0.95, weight: 1.5 })
+          .bindTooltip(s.name, { direction: 'top' }).addTo(creatorPinLayer);
       });
     }
 
-    window.toggleSpotSelection = function(spotName, isChecked) {
-      if (isChecked) checkedSpotNames.add(spotName);
-      else checkedSpotNames.delete(spotName);
-      runRoutingAndTimeline();
-    };
-
-    function refreshSpotsUI() {
-      customSpots = JSON.parse(localStorage.getItem('custom_spots_v4') || '[]');
-      allSpots = [...defaultSpots, ...customSpots];
-
-      const spotContainer = document.getElementById('spots-checkboxes');
-      if (spotContainer) {
-        spotContainer.innerHTML = allSpots.map((s, i) => {
-          const isChk = checkedSpotNames.has(s.name) ? 'checked' : '';
-          const safeName = s.name.replace(/'/g, "\\'");
-          return `
-            <label>
-              <input type="checkbox" class="spot-chk" value="${i}" ${isChk} onchange="toggleSpotSelection('${safeName}', this.checked)">
-              <span>${s.name} ${s.isCustom ? '<span class="spot-custom-badge">Custom</span>' : ''}</span>
-            </label>
-          `;
-        }).join('');
-      }
-
-      const customList = document.getElementById('custom-spots-list');
-      if (customList) {
-        customList.innerHTML = customSpots.map((s, i) => `
-          <div class="saved-spot-row">
-            <span><strong>${s.name}</strong> (${s.lat.toFixed(3)}, ${s.lon.toFixed(3)})</span>
-            <button class="del-btn" onclick="deleteCustomSpot(${i})">Delete</button>
-          </div>
-        `).join('') || '<span style="font-size:0.75rem; color:var(--text-muted);">Tap map above to create custom spots.</span>';
-      }
-
-      renderCreatorMapPins();
-      runRoutingAndTimeline();
+    // ---------------------------------------------------------------------
+    // 6c. Spot lists & persistence
+    // ---------------------------------------------------------------------
+    function persistSpots() {
+      Store.set(KEYS.spots, state.customSpots.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, isCustom: true })));
+    }
+    function persistPlan() {
+      Store.set(KEYS.plan, {
+        start: $('ramp-start').value, end: $('ramp-end').value,
+        phase: state.plan.phase, prep: state.plan.prep,
+        spots: Array.from(state.selectedSpotIds)
+      });
     }
 
-    window.saveCustomSpot = function() {
-      const name = document.getElementById('new-spot-name').value.trim();
-      const rawCoords = document.getElementById('new-spot-coords').value.trim();
-      if (!name || !rawCoords) return;
-      const parts = rawCoords.split(',').map(Number);
-      if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return;
+    function renderSpotsUI() {
+      const spots = allSpots();
+      $('spots-checkboxes').innerHTML = spots.map((s) => `
+        <label>
+          <input type="checkbox" data-change="spot" data-id="${esc(s.id)}" ${state.selectedSpotIds.has(s.id) ? 'checked' : ''}>
+          <span class="nm">${esc(s.name)}${s.isCustom ? '<span class="spot-custom-badge">Custom</span>' : ''}</span>
+        </label>`).join('');
 
-      const newSpot = { name, lat: parts[0], lon: parts[1], isCustom: true, zone: getSeaZone(parts[0], parts[1]) };
-      customSpots.push(newSpot);
-      checkedSpotNames.add(name); // Auto-select newly added spot for immediate routing
-      localStorage.setItem('custom_spots_v4', JSON.stringify(customSpots));
+      $('custom-spots-list').innerHTML = state.customSpots.map((s) => `
+        <div class="saved-spot-row">
+          <span><strong>${esc(s.name)}</strong> (${s.lat.toFixed(3)}, ${s.lon.toFixed(3)})</span>
+          <button class="del-btn" data-action="delete-spot" data-id="${esc(s.id)}" aria-label="Delete ${esc(s.name)}">Delete</button>
+        </div>`).join('') || '<span style="font-size:0.78rem; color:var(--text-muted);">Tap the map above to create custom spots.</span>';
 
-      document.getElementById('new-spot-name').value = '';
-      document.getElementById('new-spot-coords').value = '';
-      if (creatorMarker && creatorMap) {
-        creatorMap.removeLayer(creatorMarker);
-        creatorMarker = null;
-      }
+      renderCreatorPins();
+    }
 
-      refreshSpotsUI();
-    };
+    function parseCoords(raw) {
+      const parts = raw.split(/[,\s]+/).filter(Boolean).map(Number);
+      if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n))) return null;
+      const [lat, lon] = parts;
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+      return { lat, lon };
+    }
 
-    window.deleteCustomSpot = function(idx) {
-      if (customSpots[idx]) checkedSpotNames.delete(customSpots[idx].name);
-      customSpots.splice(idx, 1);
-      localStorage.setItem('custom_spots_v4', JSON.stringify(customSpots));
-      refreshSpotsUI();
-    };
+    function saveCustomSpot() {
+      const name = $('new-spot-name').value.trim().slice(0, 60);
+      const c = parseCoords($('new-spot-coords').value.trim());
+      if (!name) return UI.toast('Give the spot a name first.');
+      if (!c) return UI.toast('Coordinates should look like -41.0850, 174.7720');
+      if (allSpots().some((s) => s.name.toLowerCase() === name.toLowerCase())) return UI.toast('A spot with that name already exists.');
 
-    window.syncEndRamp = function() {
-      document.getElementById('ramp-end').value = document.getElementById('ramp-start').value;
-    };
+      const spot = { id: uid('c_'), name, lat: c.lat, lon: c.lon };
+      state.customSpots.push(spot);
+      state.selectedSpotIds.add(spot.id);
+      persistSpots(); persistPlan();
 
-    window.clearTempWaypoints = function() {
-      tempWaypoints = [];
-      runRoutingAndTimeline();
-    };
+      $('new-spot-name').value = '';
+      $('new-spot-coords').value = '';
+      if (creatorMarker && creatorMap) { creatorMap.removeLayer(creatorMarker); creatorMarker = null; }
 
-    window.runRoutingAndTimeline = function() {
-      if (!currentData) return;
+      const R = CONFIG.REGION;
+      const outside = c.lat < R.latMin || c.lat > R.latMax || c.lon < R.lonMin || c.lon > R.lonMax;
+      UI.toast(outside ? 'Saved, but it is outside Wellington waters: routes will be straight lines.' : 'Spot saved ✓');
+      renderSpotsUI();
+      refreshRoute({ fit: true });
+    }
 
-      const startRamp = RAMPS[document.getElementById('ramp-start').value];
-      const endRamp = RAMPS[document.getElementById('ramp-end').value];
+    function deleteCustomSpot(id) {
+      state.customSpots = state.customSpots.filter((s) => s.id !== id);
+      state.selectedSpotIds.delete(id);
+      persistSpots(); persistPlan();
+      renderSpotsUI();
+      refreshRoute({ fit: true });
+    }
 
-      const primaryStops = [[startRamp.lat, startRamp.lon]];
-      document.querySelectorAll('.spot-chk:checked').forEach(c => {
-        const sp = allSpots[c.value];
-        if (sp) primaryStops.push([sp.lat, sp.lon]);
-      });
-      tempWaypoints.forEach(wp => primaryStops.push([wp.lat, wp.lng]));
-      primaryStops.push([endRamp.lat, endRamp.lon]);
+    // =====================================================================
+    // 7. VESSEL PROFILE
+    // =====================================================================
+    const PROFILE_DEFAULT = { name: 'Tewaiwhare', speed: 22, burn: 12.5, tank: 50, reserve: 30 };
 
-      const waterRoute = calculateWaterRoute(primaryStops);
-
-      let totalNm = 0;
-      for (let i = 0; i < waterRoute.length - 1; i++) {
-        totalNm += getNmDist(waterRoute[i][0], waterRoute[i][1], waterRoute[i + 1][0], waterRoute[i + 1][1]);
-      }
-
-      let firstLegNm = 0;
-      if (primaryStops.length > 1) {
-        const firstLegWater = calculateWaterRoute([primaryStops[0], primaryStops[1]]);
-        for (let i = 0; i < firstLegWater.length - 1; i++) {
-          firstLegNm += getNmDist(firstLegWater[i][0], firstLegWater[i][1], firstLegWater[i + 1][0], firstLegWater[i + 1][1]);
-        }
-      }
-
-      const speed = parseFloat(document.getElementById('boat-speed').value) || 20;
-      const burn = parseFloat(document.getElementById('boat-burn').value) || 24;
-      const reservePct = parseFloat(document.getElementById('boat-reserve').value) || 30;
-      const tankCap = parseFloat(document.getElementById('boat-tank').value) || 110;
-
-      const tHrs = totalNm / speed;
-      const reqFuel = Math.ceil(tHrs * burn * (1 + reservePct / 100));
-
-      document.getElementById('route-dist').textContent = `${totalNm.toFixed(1)} nm`;
-      document.getElementById('route-time').textContent = `${Math.floor(tHrs)}h ${Math.round((tHrs % 1) * 60)}m`;
-      const fuelEl = document.getElementById('route-fuel');
-      fuelEl.textContent = `${reqFuel}L / ${tankCap}L`;
-      fuelEl.style.color = reqFuel > tankCap ? '#ff5252' : 'var(--neon-green)';
-
-      if (map) {
-        markers.forEach(m => map.removeLayer(m));
-        if (polyline) map.removeLayer(polyline);
-        markers = [];
-
-        polyline = L.polyline(waterRoute, {
-          color: '#00ff88',
-          weight: 3.5,
-          opacity: 0.95,
-          dashArray: '7, 5'
-        }).addTo(map);
-
-        primaryStops.forEach((p, i) => {
-          const isRamp = (i === 0 || i === primaryStops.length - 1);
-          const m = L.circleMarker(p, {
-            radius: isRamp ? 7 : 5.5,
-            color: isRamp ? '#ffd15c' : '#ffffff',
-            fillColor: isRamp ? '#ffd15c' : '#00e5ff',
-            fillOpacity: 1,
-            weight: 2
-          }).addTo(map);
-          markers.push(m);
-        });
-
-        map.fitBounds(polyline.getBounds(), { padding: [22, 22] });
-      }
-
-      const majs = currentData.majors.filter(t => t >= currentData.dayStart && t < currentData.dayEnd);
-      const mins = currentData.minors.filter(t => t >= currentData.dayStart && t < currentData.dayEnd);
-      const pSel = document.getElementById('target-phase').value;
-
-      let tgt = majs[0] || new Date(currentData.dayStart.getTime() + 8 * 3600000);
-      if (pSel === 'major2' && majs.length > 1) tgt = majs[1];
-      else if (pSel === 'minor1' && mins.length > 0) tgt = mins[0];
-      else if (pSel === 'minor2' && mins.length > 1) tgt = mins[1];
-
-      const winOffset = pSel.includes('major') ? 1.25 * 3600000 : 0.75 * 3600000;
-      const firstLegHrs = firstLegNm / speed;
-
-      const arr = new Date(tgt.getTime() - winOffset);
-      const launch = new Date(arr.getTime() - firstLegHrs * 3600000);
-      const wake = new Date(launch.getTime() - (parseInt(document.getElementById('prep-buffer').value) || 75) * 60000);
-
-      document.getElementById('timeline-output').innerHTML = `
-        <div class="tl-row"><div class="tl-time">${formatClock(wake)}</div><div class="tl-desc"><strong>Wake Up & Gear Check</strong><br>Check bungs, hitch trailer, depart for ${startRamp.name}.</div></div>
-        <div class="tl-row"><div class="tl-time">${formatClock(launch)}</div><div class="tl-desc"><strong>Launch Vessel</strong><br>Steam ${firstLegNm.toFixed(1)} nm (${Math.round(firstLegHrs * 60)} mins) to first mark.</div></div>
-        <div class="tl-row"><div class="tl-time">${formatClock(arr)}</div><div class="tl-desc"><strong>Lines In Water</strong><br>Arrival synchronized with opening of Solunar bite window.</div></div>
-        <div class="tl-row"><div class="tl-time">${formatClock(tgt)}</div><div class="tl-desc"><strong>Peak Activity</strong><br>Maximum solunar phase peak.</div></div>
-      `;
-    };
-
-    // =========================================================================
-    // 5. PROFILE & MULTI-SPECIES CATEGORIZED GEAR
-    // =========================================================================
-    function saveProfile() {
-      const profile = {
-        name: document.getElementById('boat-name').value,
-        speed: document.getElementById('boat-speed').value,
-        burn: document.getElementById('boat-burn').value,
-        tank: document.getElementById('boat-tank').value,
-        reserve: document.getElementById('boat-reserve').value
+    function sanitizeProfile(p) {
+      p = p || {};
+      return {
+        name: (String(p.name == null ? '' : p.name).trim().slice(0, 40)) || PROFILE_DEFAULT.name,
+        speed: clamp(num(p.speed, PROFILE_DEFAULT.speed), 4, 55),
+        burn: clamp(num(p.burn, PROFILE_DEFAULT.burn), 2, 120),
+        tank: clamp(num(p.tank, PROFILE_DEFAULT.tank), 10, 1000),
+        reserve: clamp(num(p.reserve, PROFILE_DEFAULT.reserve), 10, 50)
       };
-      localStorage.setItem('vessel_profile_v4', JSON.stringify(profile));
-      document.getElementById('boat-title-header').textContent = `${profile.name} • Mission Control`;
     }
 
-    function loadProfile() {
-      const saved = JSON.parse(localStorage.getItem('vessel_profile_v4') || 'null');
-      if (saved) {
-        document.getElementById('boat-name').value = saved.name || 'Tewaiwhare';
-        document.getElementById('boat-speed').value = saved.speed || 20;
-        document.getElementById('boat-burn').value = saved.burn || 24;
-        document.getElementById('boat-tank').value = saved.tank || 110;
-        document.getElementById('boat-reserve').value = saved.reserve || 30;
-      }
-      document.getElementById('boat-title-header').textContent = `${document.getElementById('boat-name').value} • Mission Control`;
+    function writeProfileToInputs() {
+      const p = state.profile;
+      $('boat-name').value = p.name;
+      $('boat-speed').value = p.speed;
+      $('boat-burn').value = p.burn;
+      $('boat-tank').value = p.tank;
+      $('boat-reserve').value = p.reserve;
+      $('boat-title-header').textContent = `${p.name} • Mission Control`;
     }
 
-    let customGearItems = JSON.parse(localStorage.getItem('custom_gear_categorized_v4') || '[]');
-    let checkedState = JSON.parse(localStorage.getItem('checked_gear_v4') || '{}');
+    function readProfileFromInputs() {
+      state.profile = sanitizeProfile({
+        name: $('boat-name').value, speed: $('boat-speed').value, burn: $('boat-burn').value,
+        tank: $('boat-tank').value, reserve: $('boat-reserve').value
+      });
+      Store.set(KEYS.profile, state.profile);
+      writeProfileToInputs();          // shows clamped values back to the user
+      refreshRoute();
+    }
 
+    // =====================================================================
+    // 8. GEAR CHECKLIST
+    // =====================================================================
+    // To add a species: add a block here (pill = button label, items = checklist lines).
     const SPECIES_GEAR = {
-      kingfish: {
-        title: 'Kingfish Tackle',
-        items: ['Heavy Jigging Rods (PE5–8)', '200g–300g Knife Jigs & Assist Hooks', 'Livebait Sabikis & Aerator Check', '80lb–100lb Fluorocarbon Trace', 'Gimbal Belt, Gaff & Heavy Pliers']
-      },
-      snapper: {
-        title: 'Snapper & Tarakihi Tackle',
-        items: ['Strayline Sets & Baitrunner Reels', '1/4oz–1oz Ball Sinkers & Recurve Hooks', 'Burley Bomb, Cage & Dispenser', 'Pilchards, Squid & Bonito Bait', 'Iki Spike & Salt Ice Bin']
-      },
-      groper: {
-        title: 'Hāpuku & Bluenose Trench Tackle',
-        items: ['Deep Drop Electric/Manual Combos', '16/0 Circle Hooks & Luminescent Rigs', '24oz–32oz Puka Leads', 'Heavy Anchor & Alderney Float Ring', 'Whole Kahawai / Barracouta Baits']
-      },
-      pelagic: {
-        title: 'Pelagic & Tuna Tackle',
-        items: ['Trolling Lures (Bibbed & Skirted)', 'Spinning Rod with 40g–60g Metal Jigs', 'Landing Net & Measuring Mat', 'Salt Ice Slurry Ready']
-      }
+      kingfish: { pill: 'Kingfish', title: 'Kingfish Tackle',
+        items: ['Heavy Jigging Rods (PE5–8)', '200g–300g Knife Jigs & Assist Hooks', 'Livebait Sabikis & Aerator Check', '80lb–100lb Fluorocarbon Trace', 'Gimbal Belt, Gaff & Heavy Pliers'] },
+      snapper: { pill: 'Snapper & Tarakihi', title: 'Snapper & Tarakihi Tackle',
+        items: ['Strayline Sets & Baitrunner Reels', '1/4oz–1oz Ball Sinkers & Recurve Hooks', 'Burley Bomb, Cage & Dispenser', 'Pilchards, Squid & Bonito Bait', 'Iki Spike & Salt Ice Bin'] },
+      groper: { pill: 'Hāpuku / Trench', title: 'Hāpuku & Bluenose Trench Tackle',
+        items: ['Deep Drop Electric/Manual Combos', '16/0 Circle Hooks & Luminescent Rigs', '24oz–32oz Puka Leads', 'Heavy Anchor & Alderney Float Ring', 'Whole Kahawai / Barracouta Baits'] },
+      pelagic: { pill: 'Kahawai / Tuna', title: 'Pelagic & Tuna Tackle',
+        items: ['Trolling Lures (Bibbed & Skirted)', 'Spinning Rod with 40g–60g Metal Jigs', 'Landing Net & Measuring Mat', 'Salt Ice Slurry Ready'] }
     };
 
+    // Always shown, whatever species are ticked
     const BASE_ESSENTIALS = [
       'Bungs In (Port & Starboard Checked)',
       'Lifejackets (1 per crew member)',
@@ -1172,118 +1372,227 @@
       'Flares, First Aid Kit & Bailer',
       'Navigation Lights & Bilge Pump Test'
     ];
+    const GEAR_CATEGORIES = ['safety', 'tackle', 'extras'];
 
-    window.toggleSpeciesPill = function(speciesKey) {
-      const idx = selectedSpecies.indexOf(speciesKey);
-      if (idx > -1) {
-        if (selectedSpecies.length > 1) selectedSpecies.splice(idx, 1);
-      } else {
-        selectedSpecies.push(speciesKey);
-      }
-      localStorage.setItem('selected_species_v1', JSON.stringify(selectedSpecies));
-      renderSpeciesPills();
-      renderChecklist();
-    };
+    // Checked items are stored by a stable key, not a list position, so deleting an item never ticks the wrong one.
+    const presetKey = (group, text) => `p:${group}:${text}`;
+    const customKey = (id) => `c:${id}`;
 
-    function renderSpeciesPills() {
-      document.querySelectorAll('.species-pill').forEach(pill => {
-        const sp = pill.getAttribute('data-species');
-        const isSel = selectedSpecies.includes(sp);
-        pill.classList.toggle('selected', isSel);
-        pill.querySelector('.pill-chk').textContent = isSel ? '✓' : '';
-      });
+    function persistGear() {
+      Store.set(KEYS.gearCustom, state.customGear);
+      Store.set(KEYS.gearChecked, state.gearChecked);
+      Store.set(KEYS.species, state.species);
     }
 
-    window.toggleCheckItem = function(key, checked) {
-      checkedState[key] = checked;
-      localStorage.setItem('checked_gear_v4', JSON.stringify(checkedState));
-    };
+    // Upgrades data saved by the older version (position-based keys) to the new stable keys.
+    function migrateGear() {
+      state.customGear.forEach((it) => { if (!it.id) it.id = uid('g_'); });
+      if (Store.get(KEYS.gearChecked, null) === null) {
+        const legacy = Store.get(KEYS.gearCheckedLegacy, {});
+        const next = {};
+        Object.keys(legacy).forEach((k) => {
+          if (!legacy[k]) return;
+          let m;
+          if ((m = k.match(/^base_(\d+)$/))) { const t = BASE_ESSENTIALS[+m[1]]; if (t) next[presetKey('base', t)] = true; }
+          else if ((m = k.match(/^cust_(\d+)$/))) { const it = state.customGear[+m[1]]; if (it) next[customKey(it.id)] = true; }
+          else if ((m = k.match(/^([a-z]+)_(\d+)$/))) { const g = SPECIES_GEAR[m[1]]; if (g && g.items[+m[2]]) next[presetKey(m[1], g.items[+m[2]])] = true; }
+        });
+        state.gearChecked = next;
+        persistGear();
+      }
+    }
 
-    window.resetChecks = function() {
-      checkedState = {};
-      localStorage.setItem('checked_gear_v4', '{}');
+    function renderSpeciesPills() {
+      $('species-pills-container').innerHTML = Object.keys(SPECIES_GEAR).map((key) => {
+        const sel = state.species.indexOf(key) > -1;
+        return `<div class="species-pill ${sel ? 'selected' : ''}" role="button" tabindex="0" data-action="species" data-key="${esc(key)}">
+          <div class="pill-chk">${sel ? '✓' : ''}</div><span>${esc(SPECIES_GEAR[key].pill)}</span></div>`;
+      }).join('');
+    }
+
+    function toggleSpecies(key) {
+      const idx = state.species.indexOf(key);
+      if (idx > -1) { if (state.species.length > 1) state.species.splice(idx, 1); }   // keep at least one species
+      else state.species.push(key);
+      persistGear();
+      renderSpeciesPills();
       renderChecklist();
-    };
+    }
 
-    window.addCustomGear = function() {
-      const inp = document.getElementById('custom-gear-input');
-      const val = inp.value.trim();
-      if (!val) return;
-      const cat = document.getElementById('custom-gear-category').value;
-      customGearItems.push({ text: val, category: cat });
-      localStorage.setItem('custom_gear_categorized_v4', JSON.stringify(customGearItems));
+    function addCustomGear() {
+      const inp = $('custom-gear-input');
+      const text = inp.value.trim().slice(0, 80);
+      if (!text) return;
+      const category = $('custom-gear-category').value;
+      state.customGear.push({ id: uid('g_'), text, category: GEAR_CATEGORIES.indexOf(category) > -1 ? category : 'extras' });
+      persistGear();
       inp.value = '';
       renderChecklist();
-    };
+    }
 
-    window.removeCustomGear = function(idx) {
-      customGearItems.splice(idx, 1);
-      localStorage.setItem('custom_gear_categorized_v4', JSON.stringify(customGearItems));
+    function removeCustomGear(id) {
+      state.customGear = state.customGear.filter((g) => g.id !== id);
+      delete state.gearChecked[customKey(id)];
+      persistGear();
       renderChecklist();
-    };
+    }
 
-    window.renderChecklist = function() {
-      const renderItem = (label, idxKey, delIdx = null) => {
-        const isChk = checkedState[idxKey] ? 'checked' : '';
-        const delBtn = delIdx !== null ? `<button class="del-btn" onclick="removeCustomGear(${delIdx})">✕</button>` : '';
-        return `
-          <div class="check-item">
-            <label><input type="checkbox" ${isChk} onchange="toggleCheckItem('${idxKey}', this.checked)"> <span>${label}</span></label>
-            ${delBtn}
-          </div>
-        `;
+    function resetChecks() {
+      state.gearChecked = {};
+      persistGear();
+      renderChecklist();
+    }
+
+    function renderChecklist() {
+      const row = (label, key, delId) => `
+        <div class="check-item">
+          <label><input type="checkbox" data-change="gear" data-key="${esc(key)}" ${state.gearChecked[key] ? 'checked' : ''}><span>${esc(label)}</span></label>
+          ${delId ? `<button class="del-btn" data-action="remove-gear" data-id="${esc(delId)}" aria-label="Remove ${esc(label)}">✕</button>` : ''}
+        </div>`;
+      const customIn = (cat) => state.customGear.filter((g) => g.category === cat);
+
+      let html = '<div class="checklist-group"><h4>🛥️ Vessel & Safety Essentials</h4>';
+      BASE_ESSENTIALS.forEach((t) => { html += row(t, presetKey('base', t)); });
+      customIn('safety').forEach((g) => { html += row(g.text, customKey(g.id), g.id); });
+      html += '</div>';
+
+      state.species.forEach((key) => {
+        const g = SPECIES_GEAR[key];
+        if (!g) return;
+        html += `<div class="checklist-group"><h4>🎣 ${esc(g.title)}</h4>`;
+        g.items.forEach((t) => { html += row(t, presetKey(key, t)); });
+        html += '</div>';
+      });
+
+      const tackle = customIn('tackle');
+      if (tackle.length) {
+        html += '<div class="checklist-group"><h4>🎣 Custom Tackle</h4>';
+        tackle.forEach((g) => { html += row(g.text, customKey(g.id), g.id); });
+        html += '</div>';
+      }
+      const extras = customIn('extras');
+      if (extras.length) {
+        html += '<div class="checklist-group"><h4>➕ General Extras & Provisions</h4>';
+        extras.forEach((g) => { html += row(g.text, customKey(g.id), g.id); });
+        html += '</div>';
+      }
+      $('checklist-render').innerHTML = html;
+    }
+
+    // =====================================================================
+    // 9. BACKUP / RESTORE (JSON export + import)
+    // =====================================================================
+    function buildBackup() {
+      return {
+        app: APP_ID,
+        schema: 1,
+        exportedAt: new Date().toISOString(),
+        vessel: state.profile,
+        customSpots: state.customSpots.map((s) => ({ name: s.name, lat: s.lat, lon: s.lon })),
+        gear: {
+          customItems: state.customGear.map((g) => ({ text: g.text, category: g.category })),
+          species: state.species
+        },
+        plan: { start: $('ramp-start').value, end: $('ramp-end').value, prep: state.plan.prep }
       };
+    }
 
-      let html = `<div class="checklist-group"><h4>🛥️ Vessel & Safety Essentials</h4>`;
-      BASE_ESSENTIALS.forEach((item, i) => { html += renderItem(item, 'base_' + i); });
-      customGearItems.forEach((item, i) => {
-        if (item.category === 'safety') html += renderItem(item.text, 'cust_' + i, i);
-      });
-      html += `</div>`;
-
-      selectedSpecies.forEach(spKey => {
-        const spData = SPECIES_GEAR[spKey];
-        if (spData) {
-          html += `<div class="checklist-group"><h4>🎣 ${spData.title}</h4>`;
-          spData.items.forEach((item, i) => { html += renderItem(item, spKey + '_' + i); });
-          html += `</div>`;
+    async function exportBackup() {
+      const json = JSON.stringify(buildBackup(), null, 2);
+      $('backup-text').value = json;                             // always available as a copy/paste fallback
+      const fname = `fishing-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      try {
+        const file = new File([json], fname, { type: 'application/json' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {   // iOS/Android share sheet
+          await navigator.share({ files: [file], title: 'Fishing Mission Control backup' });
+          return UI.toast('Backup shared ✓');
         }
+      } catch (e) { if (e && e.name === 'AbortError') return; }
+      try {
+        const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = fname;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        UI.toast('Backup downloaded ✓');
+      } catch (e) {
+        $('backup-details').open = true;
+        UI.toast('Copy the JSON from the box below.');
+      }
+    }
+
+    function copyBackupText() {
+      const box = $('backup-text');
+      if (!box.value) box.value = JSON.stringify(buildBackup(), null, 2);
+      box.focus(); box.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(box.value).then(() => UI.toast('Copied ✓'), () => {});
+      else UI.toast(ok ? 'Copied ✓' : 'Press and hold to copy the selected text.');
+    }
+
+    // Everything coming from a file is treated as untrusted and cleaned before use.
+    function cleanSpot(s) {
+      if (!s || typeof s !== 'object') return null;
+      const name = String(s.name == null ? '' : s.name).trim().slice(0, 60);
+      const lat = Number(s.lat), lon = Number(s.lon);
+      if (!name || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+      return { name, lat, lon };
+    }
+    function cleanGear(g) {
+      if (!g || typeof g !== 'object') return null;
+      const text = String(g.text == null ? '' : g.text).trim().slice(0, 80);
+      if (!text) return null;
+      return { text, category: GEAR_CATEGORIES.indexOf(g.category) > -1 ? g.category : 'extras' };
+    }
+
+    function applyBackupText(text) {
+      let obj;
+      try { obj = JSON.parse(text); } catch (e) { return UI.toast('That is not valid JSON.'); }
+      if (!obj || obj.app !== APP_ID) return UI.toast('This is not a Mission Control backup file.');
+
+      const replace = $('import-mode').value === 'replace';
+      if (replace && !confirm('Replace ALL your spots, gear and vessel settings with this file?')) return;
+
+      const spots = (Array.isArray(obj.customSpots) ? obj.customSpots : []).slice(0, 200).map(cleanSpot).filter(Boolean);
+      const gear = (obj.gear && Array.isArray(obj.gear.customItems) ? obj.gear.customItems : []).slice(0, 200).map(cleanGear).filter(Boolean);
+      const species = (obj.gear && Array.isArray(obj.gear.species) ? obj.gear.species : []).filter((k) => SPECIES_GEAR[k]);
+
+      if (replace) {
+        state.customSpots = [];
+        state.selectedSpotIds = new Set(['d1']);
+        state.customGear = [];
+        state.gearChecked = {};
+        if (obj.vessel) state.profile = sanitizeProfile(obj.vessel);
+        if (species.length) state.species = species;
+      }
+
+      let addedSpots = 0, addedGear = 0;
+      spots.forEach((s) => {
+        const dup = allSpots().some((x) => x.name.toLowerCase() === s.name.toLowerCase() || (Math.abs(x.lat - s.lat) < 0.0005 && Math.abs(x.lon - s.lon) < 0.0005));
+        if (dup) return;
+        const spot = { id: uid('c_'), ...s };
+        state.customSpots.push(spot);
+        state.selectedSpotIds.add(spot.id);
+        addedSpots++;
+      });
+      gear.forEach((g) => {
+        if (state.customGear.some((x) => x.text.toLowerCase() === g.text.toLowerCase() && x.category === g.category)) return;
+        state.customGear.push({ id: uid('g_'), ...g });
+        addedGear++;
       });
 
-      const customTackle = customGearItems.map((item, i) => ({ ...item, idx: i })).filter(item => item.category === 'tackle');
-      if (customTackle.length > 0) {
-        html += `<div class="checklist-group"><h4>🎣 Custom Tackle</h4>`;
-        customTackle.forEach(item => { html += renderItem(item.text, 'cust_' + item.idx, item.idx); });
-        html += `</div>`;
-      }
+      Store.set(KEYS.profile, state.profile);
+      persistSpots(); persistGear(); persistPlan();
+      writeProfileToInputs();
+      renderSpotsUI(); renderSpeciesPills(); renderChecklist();
+      refreshRoute({ fit: true });
+      UI.toast(`Imported ✓  ${addedSpots} spot${addedSpots === 1 ? '' : 's'}, ${addedGear} gear item${addedGear === 1 ? '' : 's'}${replace ? ' (replaced)' : ''}`);
+    }
 
-      const extras = customGearItems.map((item, i) => ({ ...item, idx: i })).filter(item => item.category === 'extras');
-      if (extras.length > 0) {
-        html += `<div class="checklist-group"><h4>➕ General Extras & Provisions</h4>`;
-        extras.forEach(item => { html += renderItem(item.text, 'cust_' + item.idx, item.idx); });
-        html += `</div>`;
-      }
-
-      document.getElementById('checklist-render').innerHTML = html;
-    };
-
-    // =========================================================================
-    // 6. GLOBAL INITIALIZATION & TAB SWITCHING
-    // =========================================================================
-    window.switchTab = function(tabId, btnElement) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-      document.getElementById('tab-' + tabId).classList.add('active');
-      document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
-      btnElement.classList.add('active');
-
-      if (tabId === 'route') {
-        refreshSpotsUI();
-        ensureRouteMap();
-      } else if (tabId === 'vessel') {
-        ensureCreatorMap();
-      }
-    };
-
+    // =====================================================================
+    // 10. SOLUNAR SCREEN RENDERING
+    // =====================================================================
     function buildWindowCard(centerDate, halfWidthHr, dayStart, dayEnd, id) {
       const s = new Date(centerDate.getTime() - halfWidthHr * 3600000);
       const e = new Date(centerDate.getTime() + halfWidthHr * 3600000);
@@ -1294,61 +1603,60 @@
       if (s < dayStart) sub = '<span class="day-offset">previous day</span>';
       else if (e >= dayEnd) sub = '<span class="day-offset">next day</span>';
 
-      const isSelected = activeWindow && activeWindow.id === id;
-      return `
-        <div class="time-card ${isSelected ? 'active-window' : ''}" onclick="selectWindow('${id}', ${sHr}, ${eHr}, 'rgba(255,255,255,0.42)')">
-          <div class="time-card-text">${formatClock(s)} – ${formatClock(e)}${sub}</div>
-        </div>
-      `;
+      const isSelected = state.activeWindow && state.activeWindow.id === id;
+      return `<div class="time-card ${isSelected ? 'active-window' : ''}" data-action="window" data-id="${id}" data-s="${sHr}" data-e="${eHr}" data-color="rgba(255,255,255,0.42)">
+          <div class="time-card-text">${formatClock(s)} – ${formatClock(e)}${sub}</div></div>`;
     }
 
-    window.selectWindow = function(id, sHr, eHr, color) {
-      if (activeWindow && activeWindow.id === id) activeWindow = null;
-      else activeWindow = { id, sHr, eHr, color };
+    function selectWindow(id, sHr, eHr, color) {
+      if (state.activeWindow && state.activeWindow.id === id) state.activeWindow = null;
+      else state.activeWindow = { id, sHr, eHr, color };
       renderSolunar();
-    };
+    }
 
     function renderSolunar() {
-      const loc = LOCATIONS[currentLocKey];
-      const data = calculateSolunarAndTides(selectedDate, loc);
-      currentData = data;
+      const loc = LOCATIONS[state.locKey];
+      const data = calculateSolunarAndTides(state.date, loc);
+      state.data = data;
       const score = data.score;
 
-      document.getElementById('score-val').textContent = score;
-      document.getElementById('stars-val').textContent = score >= 90 ? '★★★' : (score >= 40 ? '★★' : (score >= 20 ? '★' : ''));
+      $('score-val').textContent = score;
+      $('stars-val').textContent = score >= 90 ? '★★★' : (score >= 40 ? '★★' : (score >= 20 ? '★' : ''));
 
       let label = 'Very high fish activity';
       if (score < 20) label = 'Very low fish activity';
       else if (score < 40) label = 'Low fish activity';
       else if (score < 70) label = 'Average fish activity';
       else if (score < 85) label = 'High fish activity';
-      document.getElementById('label-val').textContent = label;
+      $('label-val').textContent = label;
 
-      document.getElementById('gauge-ticks').style.strokeDashoffset = (301.59 * (1 - score / 100)).toFixed(2);
+      // Gauge: reveal the first score% of the tick ring through the mask (circumference = 2*pi*48)
+      const circ = 2 * Math.PI * 48;
+      $('gauge-mask-arc').setAttribute('stroke-dasharray', `${(circ * score / 100).toFixed(2)} 400`);
 
-      const dayMajors = data.majors.filter(t => t >= data.dayStart && t < data.dayEnd);
-      const dayMinors = data.minors.filter(t => t >= data.dayStart && t < data.dayEnd);
+      const dayMajors = data.majors.filter((t) => t >= data.dayStart && t < data.dayEnd);
+      const dayMinors = data.minors.filter((t) => t >= data.dayStart && t < data.dayEnd);
 
-      document.getElementById('major-list').innerHTML = dayMajors.map((t, i) => buildWindowCard(t, 1.25, data.dayStart, data.dayEnd, 'maj_' + i)).join('') || '<div class="time-card">–</div>';
-      document.getElementById('minor-list').innerHTML = dayMinors.map((t, i) => buildWindowCard(t, 0.75, data.dayStart, data.dayEnd, 'min_' + i)).join('') || '<div class="time-card">–</div>';
+      $('major-list').innerHTML = dayMajors.map((t, i) => buildWindowCard(t, CONFIG.MAJOR_HALF_WIDTH_HRS, data.dayStart, data.dayEnd, 'maj_' + i)).join('') || '<div class="time-card">–</div>';
+      $('minor-list').innerHTML = dayMinors.map((t, i) => buildWindowCard(t, CONFIG.MINOR_HALF_WIDTH_HRS, data.dayStart, data.dayEnd, 'min_' + i)).join('') || '<div class="time-card">–</div>';
 
-      document.getElementById('tide-area-title').textContent = `${loc.name} Tides`;
-      document.getElementById('tide-diff-badge').textContent = loc.diffText;
-      document.getElementById('tide-list').innerHTML = data.dayTides.map(t => `<div class="tide-item"><span class="tide-type">${t.type}</span><span>${formatClock(t.time)}</span></div>`).join('');
+      $('tide-area-title').textContent = `${loc.name} Tides`;
+      $('tide-diff-badge').textContent = loc.diffText;
+      $('tide-list').innerHTML = data.dayTides.map((t) => `<div class="tide-item"><span class="tide-type">${t.type}</span><span>${formatClock(t.time)}</span></div>`).join('');
 
-      document.getElementById('burley-box').className = `burley-box ${showBurleyMode ? 'show' : ''}`;
-      document.getElementById('burley-list').innerHTML = data.burleyWindows.map((bw, idx) => {
+      $('burley-box').className = `burley-box ${state.burley ? 'show' : ''}`;
+      $('burley-list').innerHTML = data.burleyWindows.map((bw, idx) => {
         const sHr = (bw.start.getTime() - data.dayStart.getTime()) / 3600000;
         const eHr = (bw.end.getTime() - data.dayStart.getTime()) / 3600000;
-        return `<div class="burley-item" onclick="selectWindow('bur_${idx}', ${sHr}, ${eHr}, 'rgba(0, 255, 136, 0.45)')"><span><strong>${bw.flowDir}:</strong></span><span>${formatClock(bw.start)} – ${formatClock(bw.end)}</span></div>`;
+        return `<div class="burley-item" data-action="window" data-id="bur_${idx}" data-s="${sHr}" data-e="${eHr}" data-color="rgba(0, 255, 136, 0.45)"><span><strong>${bw.flowDir}:</strong></span><span>${formatClock(bw.start)} – ${formatClock(bw.end)}</span></div>`;
       }).join('');
 
       drawChart(data);
-      runRoutingAndTimeline();
+      updateTimeline();                      // timeline depends on today's solunar peaks
     }
 
     function drawChart(data) {
-      const svg = document.getElementById('curve-svg');
+      const svg = $('curve-svg');
       const W = 440, H = 214, leftPad = 62, rightPad = 12, topPad = 22, botPad = 34;
       const graphW = W - leftPad - rightPad, graphH = H - topPad - botPad;
 
@@ -1356,8 +1664,7 @@
       let svgHTML = `
         <line x1="${leftPad}" y1="${yHigh}" x2="${W - rightPad}" y2="${yHigh}" stroke="rgba(255,255,255,0.12)" stroke-dasharray="3,3" />
         <line x1="${leftPad}" y1="${yMed}" x2="${W - rightPad}" y2="${yMed}" stroke="rgba(255,255,255,0.12)" stroke-dasharray="3,3" />
-        <line x1="${leftPad}" y1="${yLow}" x2="${W - rightPad}" y2="${yLow}" stroke="rgba(255,255,255,0.12)" stroke-dasharray="3,3" />
-      `;
+        <line x1="${leftPad}" y1="${yLow}" x2="${W - rightPad}" y2="${yLow}" stroke="rgba(255,255,255,0.12)" stroke-dasharray="3,3" />`;
 
       const hrs = [4, 8, 12, 16, 20];
       const hrLabels = ['4:00 am', '8:00 am', '12:00 pm', '4:00 pm', '8:00 pm'];
@@ -1365,8 +1672,7 @@
         const x = leftPad + (h / 24) * graphW;
         svgHTML += `
           <line x1="${x}" y1="${topPad - 6}" x2="${x}" y2="${H - botPad}" stroke="rgba(255,255,255,0.12)" />
-          <text x="${x}" y="${H - 12}" fill="rgba(220,235,252,0.6)" font-size="10" text-anchor="middle">${hrLabels[i]}</text>
-        `;
+          <text x="${x}" y="${H - 12}" fill="rgba(220,235,252,0.6)" font-size="10" text-anchor="middle">${hrLabels[i]}</text>`;
       });
 
       const pts = [];
@@ -1383,27 +1689,24 @@
         const x1 = Math.max(leftPad, leftPad + (sHr / 24) * graphW);
         const x2 = Math.min(W - rightPad, leftPad + (eHr / 24) * graphW);
         if (x2 <= x1) return '';
-        const subPts = pts.filter(p => p.x >= x1 && p.x <= x2);
+        const subPts = pts.filter((p) => p.x >= x1 && p.x <= x2);
         const yStart = topPad + graphH * (1 - evaluateActivity(Math.max(0, sHr), data) / 100);
         const yEnd = topPad + graphH * (1 - evaluateActivity(Math.min(24, eHr), data) / 100);
 
         let colPath = `M ${x1.toFixed(1)},${H - botPad} L ${x1.toFixed(1)},${yStart.toFixed(1)} `;
-        subPts.forEach(p => { colPath += `L ${p.x.toFixed(1)},${p.y.toFixed(1)} `; });
+        subPts.forEach((p) => { colPath += `L ${p.x.toFixed(1)},${p.y.toFixed(1)} `; });
         colPath += `L ${x2.toFixed(1)},${yEnd.toFixed(1)} L ${x2.toFixed(1)},${H - botPad} Z`;
         return `<path d="${colPath}" fill="${fillColor}" stroke="none" />`;
       }
 
-      if (showBurleyMode) {
-        data.burleyWindows.forEach(bw => {
+      if (state.burley) {
+        data.burleyWindows.forEach((bw) => {
           const sHr = (bw.start.getTime() - data.dayStart.getTime()) / 3600000;
           const eHr = (bw.end.getTime() - data.dayStart.getTime()) / 3600000;
           svgHTML += buildColumnUnderCurve(sHr, eHr, 'rgba(0, 255, 136, 0.28)');
         });
       }
-
-      if (activeWindow) {
-        svgHTML += buildColumnUnderCurve(activeWindow.sHr, activeWindow.eHr, activeWindow.color);
-      }
+      if (state.activeWindow) svgHTML += buildColumnUnderCurve(state.activeWindow.sHr, state.activeWindow.eHr, state.activeWindow.color);
 
       const lineD = pts.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
       const fillD = `${lineD} L ${(W - rightPad).toFixed(1)},${H - botPad} L ${leftPad},${H - botPad} Z`;
@@ -1416,8 +1719,7 @@
           </linearGradient>
         </defs>
         <path d="${fillD}" fill="url(#curveFill)" stroke="none" />
-        <path d="${lineD}" fill="none" stroke="#00e5ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
-      `;
+        <path d="${lineD}" fill="none" stroke="#00e5ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />`;
 
       const now = new Date();
       if (now >= data.dayStart && now < data.dayEnd) {
@@ -1427,16 +1729,14 @@
         svgHTML += `<circle cx="${curX.toFixed(1)}" cy="${curY.toFixed(1)}" r="5.5" fill="#e53935" stroke="#ffffff" stroke-width="2" />`;
       }
 
-      if (scrubHour !== null) {
-        const sx = leftPad + (scrubHour / 24) * graphW;
-        const sAct = evaluateActivity(scrubHour, data);
-        const sy = topPad + graphH * (1 - sAct / 100);
-        const totalMinutes = Math.round(scrubHour * 60);
-        let h = Math.floor(totalMinutes / 60) % 24;
+      if (state.scrubHour !== null) {
+        const sh = state.scrubHour;
+        const sx = leftPad + (sh / 24) * graphW;
+        const sy = topPad + graphH * (1 - evaluateActivity(sh, data) / 100);
+        const totalMinutes = Math.round(sh * 60);
+        const h = Math.floor(totalMinutes / 60) % 24;
         const m = totalMinutes % 60;
-        const ampm = h >= 12 ? 'pm' : 'am';
-        const h12 = h % 12 || 12;
-        const timeLabel = `${h12}:${m < 10 ? '0' : ''}${m} ${ampm}`;
+        const timeLabel = `${h % 12 || 12}:${m < 10 ? '0' : ''}${m} ${h >= 12 ? 'pm' : 'am'}`;
 
         const pillW = 68, pillH = 22;
         const pillX = Math.max(leftPad + 2, Math.min(W - rightPad - pillW - 2, sx - pillW / 2));
@@ -1446,45 +1746,37 @@
           <line x1="${sx.toFixed(1)}" y1="${topPad}" x2="${sx.toFixed(1)}" y2="${H - botPad}" stroke="rgba(255,255,255,0.7)" stroke-width="1.2" />
           <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="4.5" fill="#ffffff" stroke="#0d2847" stroke-width="2" />
           <rect x="${pillX.toFixed(1)}" y="${pillY.toFixed(1)}" width="${pillW}" height="${pillH}" rx="4" fill="#071526" stroke="rgba(0,229,255,0.4)" stroke-width="1" />
-          <text x="${(pillX + pillW / 2).toFixed(1)}" y="${(pillY + 15).toFixed(1)}" fill="#00e5ff" font-size="11" font-weight="600" text-anchor="middle">${timeLabel}</text>
-        `;
+          <text x="${(pillX + pillW / 2).toFixed(1)}" y="${(pillY + 15).toFixed(1)}" fill="#00e5ff" font-size="11" font-weight="600" text-anchor="middle">${timeLabel}</text>`;
       }
-
       svg.innerHTML = svgHTML;
     }
 
-    const chartArea = document.getElementById('chart-area');
     function handleScrub(e) {
-      if (!currentData) return;
-      const rect = chartArea.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      if (!state.data) return;
+      const rect = $('chart-area').getBoundingClientRect();
       const W = 440, leftPad = 62, rightPad = 12, graphW = W - leftPad - rightPad;
-      const clickX = (clientX - rect.left) * (W / rect.width);
+      const clickX = (e.clientX - rect.left) * (W / rect.width);
       const clampedX = Math.max(leftPad, Math.min(W - rightPad, clickX));
-      scrubHour = ((clampedX - leftPad) / graphW) * 24;
-      drawChart(currentData);
+      state.scrubHour = ((clampedX - leftPad) / graphW) * 24;
+      drawChart(state.data);
     }
-    chartArea.addEventListener('pointerdown', (e) => { handleScrub(e); chartArea.setPointerCapture(e.pointerId); });
-    chartArea.addEventListener('pointermove', (e) => { if (e.buttons || e.touches) handleScrub(e); });
 
     function renderDateStrip() {
-      const strip = document.getElementById('date-strip');
+      const strip = $('date-strip');
       strip.innerHTML = '';
       const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
       const today = new Date();
-
       for (let offset = -3; offset <= 3; offset++) {
-        const d = new Date(selectedDate);
-        d.setDate(selectedDate.getDate() + offset);
+        const d = new Date(state.date);
+        d.setDate(state.date.getDate() + offset);
         const isToday = d.toDateString() === today.toDateString();
-
         const cell = document.createElement('div');
         cell.className = `date-item ${offset === 0 ? 'active' : ''}`;
         cell.innerHTML = `<div class="day-num">${d.getDate()}</div><div class="day-name">${isToday ? 'TODAY' : days[d.getDay()]}</div>`;
         cell.onclick = () => {
-          selectedDate = d;
-          activeWindow = null;
-          scrubHour = null;
+          state.date = d;
+          state.activeWindow = null;
+          state.scrubHour = null;
           renderDateStrip();
           renderSolunar();
         };
@@ -1492,49 +1784,190 @@
       }
     }
 
-    document.getElementById('loc-select-main').onchange = (e) => {
-      currentLocKey = e.target.value;
-      activeWindow = null;
-      renderSolunar();
+    // =====================================================================
+    // 11. UI HELPERS (tabs, toast, warnings)
+    // =====================================================================
+    const UI = {
+      _t: null,
+      toast(msg) {
+        const el = $('toast');
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.add('show');
+        clearTimeout(this._t);
+        this._t = setTimeout(() => el.classList.remove('show'), 3200);
+      },
+      storageWarning(show) { const el = $('storage-warning'); if (el) el.classList.toggle('show', !!show); },
+      switchTab(tabId) {
+        document.querySelectorAll('.tab-content').forEach((el) => el.classList.remove('active'));
+        $('tab-' + tabId).classList.add('active');
+        document.querySelectorAll('.nav-btn').forEach((el) => {
+          const on = el.dataset.tab === tabId;
+          el.classList.toggle('active', on);
+          if (on) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current');
+        });
+        window.scrollTo(0, 0);
+        if (tabId === 'route') { renderSpotsUI(); ensureRouteMap(); }
+        else if (tabId === 'vessel') ensureCreatorMap();
+      }
     };
 
-    const burleyBtn = document.getElementById('burley-btn');
-    burleyBtn.onclick = () => {
-      showBurleyMode = !showBurleyMode;
-      burleyBtn.classList.toggle('active', showBurleyMode);
-      renderSolunar();
+    // =====================================================================
+    // 12. EVENT WIRING (one delegated listener instead of dozens of inline onclick="" attributes)
+    // =====================================================================
+    const ACTIONS = {
+      tab: (el) => UI.switchTab(el.dataset.tab),
+      burley: (el) => { state.burley = !state.burley; el.classList.toggle('active', state.burley); renderSolunar(); },
+      window: (el) => selectWindow(el.dataset.id, parseFloat(el.dataset.s), parseFloat(el.dataset.e), el.dataset.color),
+      'clear-turns': () => { state.tempWaypoints = []; refreshRoute({ fit: true }); },
+      'undo-turn': () => { state.tempWaypoints.pop(); refreshRoute(); },
+      'save-spot': saveCustomSpot,
+      'delete-spot': (el) => deleteCustomSpot(el.dataset.id),
+      species: (el) => toggleSpecies(el.dataset.key),
+      'reset-checks': resetChecks,
+      'add-gear': addCustomGear,
+      'remove-gear': (el) => removeCustomGear(el.dataset.id),
+      export: exportBackup,
+      'backup-copy': copyBackupText,
+      'import-paste': () => { const t = $('backup-text').value.trim(); if (!t) return UI.toast('Paste a backup into the box first.'); applyBackupText(t); }
+    };
+    const CHANGES = {
+      spot: (el) => {
+        if (el.checked) state.selectedSpotIds.add(el.dataset.id); else state.selectedSpotIds.delete(el.dataset.id);
+        persistPlan();
+        refreshRoute({ fit: true });
+      },
+      gear: (el) => {
+        if (el.checked) state.gearChecked[el.dataset.key] = true; else delete state.gearChecked[el.dataset.key];
+        Store.set(KEYS.gearChecked, state.gearChecked);
+      }
     };
 
-    const picker = document.getElementById('date-picker');
-    document.getElementById('cal-btn').onclick = () => {
-      if (picker.showPicker) picker.showPicker();
-      else picker.click();
-    };
-    picker.onchange = (e) => {
-      if (!e.target.value) return;
-      const [y, m, d] = e.target.value.split('-').map(Number);
-      selectedDate = new Date(y, m - 1, d, 12, 0, 0);
-      activeWindow = null;
-      scrubHour = null;
-      renderDateStrip();
-      renderSolunar();
-    };
+    function wireEvents() {
+      document.addEventListener('click', (e) => {
+        const el = e.target.closest('[data-action]');
+        if (el && ACTIONS[el.dataset.action]) ACTIONS[el.dataset.action](el, e);
+      });
+      document.addEventListener('keydown', (e) => {                       // keyboard access for the species pills
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('species-pill')) {
+          e.preventDefault(); ACTIONS.species(e.target);
+        }
+      });
+      document.addEventListener('change', (e) => {
+        const el = e.target.closest('[data-change]');
+        if (el && CHANGES[el.dataset.change]) CHANGES[el.dataset.change](el, e);
+      });
 
-    // Immediate & safe boot sequence
-    function bootApp() {
-      loadProfile();
+      $('loc-select-main').addEventListener('change', (e) => { state.locKey = e.target.value; state.activeWindow = null; renderSolunar(); });
+
+      const picker = $('date-picker');
+      picker.addEventListener('change', (e) => {
+        if (!e.target.value) return;
+        const [y, m, d] = e.target.value.split('-').map(Number);
+        state.date = new Date(y, m - 1, d, 12, 0, 0);
+        state.activeWindow = null; state.scrubHour = null;
+        renderDateStrip(); renderSolunar();
+      });
+
+      const chart = $('chart-area');
+      chart.addEventListener('pointerdown', (e) => { handleScrub(e); try { chart.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } });
+      chart.addEventListener('pointermove', (e) => { if (e.buttons) handleScrub(e); });
+
+      // Trip plan inputs
+      $('ramp-start').addEventListener('change', () => { $('ramp-end').value = $('ramp-start').value; persistPlan(); refreshRoute({ fit: true }); });
+      $('ramp-end').addEventListener('change', () => { persistPlan(); refreshRoute({ fit: true }); });
+      $('target-phase').addEventListener('change', (e) => { state.plan.phase = e.target.value; persistPlan(); updateTimeline(); });
+      $('prep-buffer').addEventListener('change', (e) => {
+        state.plan.prep = clamp(Math.round(num(e.target.value, 75)), 0, 360);
+        e.target.value = state.plan.prep;
+        persistPlan(); updateTimeline();
+      });
+      $('show-nodes').addEventListener('change', (e) => {
+        if (!map || !nodeLayer) return;
+        if (e.target.checked) { drawNodeLayer(); nodeLayer.addTo(map); } else map.removeLayer(nodeLayer);
+      });
+
+      // Vessel inputs
+      ['boat-name', 'boat-speed', 'boat-burn', 'boat-tank', 'boat-reserve'].forEach((id) => $(id).addEventListener('change', readProfileFromInputs));
+
+      // Backup file import
+      $('import-file').addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        if (f.size > 1024 * 1024) { e.target.value = ''; return UI.toast('That file is too big to be a backup.'); }
+        const reader = new FileReader();
+        reader.onload = () => { applyBackupText(String(reader.result)); e.target.value = ''; };
+        reader.onerror = () => UI.toast('Could not read that file.');
+        reader.readAsText(f);
+      });
+
+      // Another tab/window changed saved data: reload so the two never fight each other
+      window.addEventListener('storage', (e) => {
+        if (!e.key || Object.keys(KEYS).some((k) => KEYS[k] === e.key)) { loadState(); renderAll(); }
+      });
+    }
+
+    // =====================================================================
+    // 13. LOAD / RENDER / BOOT
+    // =====================================================================
+    function loadState() {
+      // custom spots (older saves have no id and may carry stale fields, so rebuild cleanly)
+      const savedSpots = Store.get(KEYS.spots, []);
+      state.customSpots = (Array.isArray(savedSpots) ? savedSpots : []).map(cleanSpot).map((s, i) => {
+        const raw = savedSpots[i] || {};
+        return s ? { id: raw.id || uid('c_'), name: s.name, lat: s.lat, lon: s.lon } : null;
+      }).filter(Boolean);
+
+      state.profile = sanitizeProfile(Store.get(KEYS.profile, null));
+
+      const sp = Store.get(KEYS.species, ['kingfish', 'snapper']);
+      state.species = (Array.isArray(sp) ? sp : []).filter((k) => SPECIES_GEAR[k]);
+      if (!state.species.length) state.species = ['kingfish', 'snapper'];
+
+      const cg = Store.get(KEYS.gearCustom, []);
+      state.customGear = (Array.isArray(cg) ? cg : []).map((g) => {
+        const c = cleanGear(g);
+        return c ? { id: (g && g.id) || uid('g_'), text: c.text, category: c.category } : null;
+      }).filter(Boolean);
+      state.gearChecked = Store.get(KEYS.gearChecked, null) || {};
+      migrateGear();
+
+      const plan = Store.get(KEYS.plan, null);
+      if (plan) {
+        state.plan.start = RAMPS[plan.start] ? plan.start : 'evans';
+        state.plan.end = RAMPS[plan.end] ? plan.end : state.plan.start;
+        state.plan.phase = typeof plan.phase === 'string' ? plan.phase : 'major1';
+        state.plan.prep = clamp(Math.round(num(plan.prep, 75)), 0, 360);
+        if (Array.isArray(plan.spots)) {
+          const valid = new Set(allSpots().map((s) => s.id));
+          state.selectedSpotIds = new Set(plan.spots.filter((id) => valid.has(id)));
+        }
+      }
+    }
+
+    function renderAll() {
+      $('ramp-start').value = state.plan.start;
+      $('ramp-end').value = state.plan.end;
+      $('prep-buffer').value = state.plan.prep;
+      writeProfileToInputs();
       renderDateStrip();
       renderSpeciesPills();
       renderChecklist();
-      refreshSpotsUI();
+      renderSpotsUI();
       renderSolunar();
+      refreshRoute({ fit: true });
     }
 
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', bootApp);
-    } else {
-      bootApp();
+    function bootApp() {
+      wireEvents();
+      loadState();
+      if (!Store.available) UI.storageWarning(true);
+      renderAll();
     }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootApp);
+    else bootApp();
+  })();
   </script>
 </body>
 </html>
